@@ -1,0 +1,7 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+httpx>=0.27
+websockets>=12.0
+watchfiles>=0.21
+python-multipart>=0.0.9
+

@@ -1,0 +1,29 @@
+services:
+  comfyui2api:
+    image: python:3.13-slim
+    working_dir: /app
+    volumes:
+      - ./:/app
+      - ./runs:/app/runs
+    environment:
+      API_LISTEN: "0.0.0.0"
+      API_PORT: "8460"
+      COMFYUI_BASE_URL: "${COMFYUI_BASE_URL:-http://host.docker.internal:8188}"
+      WORKFLOWS_DIR: "/app/comfyui-api-workflows"
+      RUNS_DIR: "/app/runs"
+      COMFYUI_INPUT_DIR: "${COMFYUI_INPUT_DIR:-/comfyui/input}"
+      INPUT_SUBDIR: "${INPUT_SUBDIR:-comfyui2api}"
+      IMAGE_UPLOAD_MODE: "${IMAGE_UPLOAD_MODE:-comfy}"
+      WORKER_CONCURRENCY: "${WORKER_CONCURRENCY:-1}"
+      DEFAULT_TXT2IMG_WORKFLOW: "${DEFAULT_TXT2IMG_WORKFLOW:-文生图_z_image_turbo.json}"
+      DEFAULT_IMG2IMG_WORKFLOW: "${DEFAULT_IMG2IMG_WORKFLOW:-图生图_flux2.json}"
+      DEFAULT_TXT2VIDEO_WORKFLOW: "${DEFAULT_TXT2VIDEO_WORKFLOW:-}"
+      DEFAULT_IMG2VIDEO_WORKFLOW: "${DEFAULT_IMG2VIDEO_WORKFLOW:-img2video.json}"
+      API_TOKEN: "${API_TOKEN:-}"
+      PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-}"
+    command: >
+      sh -lc "pip install -r requirements.txt &&
+              pip install -e . &&
+              python -m comfyui2api"
+    ports:
+      - "8460:8460"

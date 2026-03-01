@@ -1,0 +1,251 @@
+{
+  "9": {
+    "inputs": {
+      "filename_prefix": "Flux2",
+      "images": [
+        "68:8",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "保存图像"
+    }
+  },
+  "45": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "megapixels": 1,
+      "resolution_steps": 1,
+      "image": [
+        "46",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "缩放图像（像素）"
+    }
+  },
+  "46": {
+    "inputs": {
+      "image": "ent010-1-fhd.jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "68:48": {
+    "inputs": {
+      "steps": 20,
+      "width": [
+        "68:68",
+        0
+      ],
+      "height": [
+        "68:68",
+        1
+      ]
+    },
+    "class_type": "Flux2Scheduler",
+    "_meta": {
+      "title": "Flux2调度器"
+    }
+  },
+  "68:22": {
+    "inputs": {
+      "model": [
+        "68:12",
+        0
+      ],
+      "conditioning": [
+        "68:43",
+        0
+      ]
+    },
+    "class_type": "BasicGuider",
+    "_meta": {
+      "title": "基本引导器"
+    }
+  },
+  "68:26": {
+    "inputs": {
+      "guidance": 4,
+      "conditioning": [
+        "68:6",
+        0
+      ]
+    },
+    "class_type": "FluxGuidance",
+    "_meta": {
+      "title": "Flux引导"
+    }
+  },
+  "68:16": {
+    "inputs": {
+      "sampler_name": "euler"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "K采样器选择"
+    }
+  },
+  "68:10": {
+    "inputs": {
+      "vae_name": "flux2-vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "加载VAE"
+    }
+  },
+  "68:13": {
+    "inputs": {
+      "noise": [
+        "68:25",
+        0
+      ],
+      "guider": [
+        "68:22",
+        0
+      ],
+      "sampler": [
+        "68:16",
+        0
+      ],
+      "sigmas": [
+        "68:48",
+        0
+      ],
+      "latent_image": [
+        "68:47",
+        0
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced",
+    "_meta": {
+      "title": "自定义采样器（高级）"
+    }
+  },
+  "68:6": {
+    "inputs": {
+      "text": "A cute maid around 20 years old (with bangs, long straight black hair, wearing a white lace headband, dressed in a classic black and white maid outfit)",
+      "clip": [
+        "68:38",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Positive Prompt)"
+    }
+  },
+  "68:38": {
+    "inputs": {
+      "clip_name": "mistral_3_small_flux2_bf16.safetensors",
+      "type": "flux2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "加载CLIP"
+    }
+  },
+  "68:12": {
+    "inputs": {
+      "unet_name": "flux2_dev_fp8mixed.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "UNet加载器"
+    }
+  },
+  "68:44": {
+    "inputs": {
+      "pixels": [
+        "45",
+        0
+      ],
+      "vae": [
+        "68:10",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE编码"
+    }
+  },
+  "68:43": {
+    "inputs": {
+      "conditioning": [
+        "68:26",
+        0
+      ],
+      "latent": [
+        "68:44",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent",
+    "_meta": {
+      "title": "参考Latent"
+    }
+  },
+  "68:68": {
+    "inputs": {
+      "image": [
+        "45",
+        0
+      ]
+    },
+    "class_type": "GetImageSize",
+    "_meta": {
+      "title": "获取图像尺寸"
+    }
+  },
+  "68:25": {
+    "inputs": {
+      "noise_seed": 582837274157880
+    },
+    "class_type": "RandomNoise",
+    "_meta": {
+      "title": "随机噪波"
+    }
+  },
+  "68:8": {
+    "inputs": {
+      "samples": [
+        "68:13",
+        0
+      ],
+      "vae": [
+        "68:10",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE解码"
+    }
+  },
+  "68:47": {
+    "inputs": {
+      "width": [
+        "68:68",
+        0
+      ],
+      "height": [
+        "68:68",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyFlux2LatentImage",
+    "_meta": {
+      "title": "空Latent图像（Flux2）"
+    }
+  }
+}
