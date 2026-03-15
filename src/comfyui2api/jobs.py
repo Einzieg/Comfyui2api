@@ -11,6 +11,7 @@ from .comfy_client import ComfyApiError, ComfyUIClient
 from .comfy_workflow import iter_file_outputs, prepare_prompt
 from .config import Config
 from .util import guess_media_type, json_dumps, pick_primary_url, sanitize_filename_part, utc_now_iso, utc_now_unix
+from .workflow_params import resolve_standard_overrides
 from .workflow_registry import WorkflowDefinition, WorkflowRegistry
 
 
@@ -45,6 +46,7 @@ class Job:
     negative_prompt_node: str = ""
     image_node: str = ""
     overrides: list[tuple[str, str, Any]] = field(default_factory=list)
+    standard_params: Dict[str, Any] = field(default_factory=dict)
 
     prompt_id: str = ""
     client_id: str = ""
@@ -108,6 +110,7 @@ class JobManager:
         negative_prompt_node: str = "",
         image_node: str = "",
         overrides: Optional[list[tuple[str, str, Any]]] = None,
+        standard_params: Optional[Dict[str, Any]] = None,
     ) -> Job:
         job_id = uuid.uuid4().hex
         job = Job(
@@ -129,6 +132,7 @@ class JobManager:
             negative_prompt_node=negative_prompt_node or "",
             image_node=image_node or "",
             overrides=list(overrides or []),
+            standard_params=dict(standard_params or {}),
         )
         async with self._lock:
             self._jobs[job_id] = job
@@ -243,7 +247,12 @@ class JobManager:
             negative_prompt_node=job.negative_prompt_node or None,
             image=job.image or None,
             image_node=job.image_node or None,
-            overrides=job.overrides or [],
+            overrides=resolve_standard_overrides(
+                workflow_obj=job_obj,
+                spec=wf.parameter_spec,
+                request_params=job.standard_params,
+            )
+            + list(job.overrides or []),
         )
 
         qp = await self.comfy.queue_prompt(prompt=prompt_graph, client_id=client_id, extra_data=extra_data)

@@ -32,6 +32,19 @@ python -m comfyui2api
 
 服务默认监听 `0.0.0.0:8000`。
 
+### ComfyUI 在 WSL 中运行
+
+如果 `comfyui2api` 跑在 Windows，而 ComfyUI 跑在 WSL，通常可以直接继续使用：
+
+```powershell
+$env:COMFYUI_BASE_URL = "http://127.0.0.1:8188"
+$env:IMAGE_UPLOAD_MODE = "comfy"
+```
+
+推荐把 `IMAGE_UPLOAD_MODE` 设为 `comfy`，这样输入图片会通过 ComfyUI 的 HTTP 上传接口进入 WSL 内的 `input/`，不依赖 Windows 和 WSL 共享文件路径。
+
+只有当你明确配置了一个 Windows 可访问的 WSL `input` 目录时，才建议使用 `local` 或 `auto` fallback。
+
 ## 环境变量
 
 - `API_LISTEN`：默认 `0.0.0.0`
@@ -44,7 +57,7 @@ python -m comfyui2api
   - `comfy`：走 ComfyUI `POST /upload/image`（推荐：API 与 ComfyUI 不共享磁盘时）
   - `local`：写本地 `COMFYUI_INPUT_DIR`
   - `auto`：优先 `comfy`，失败再 fallback 到 `local`
-- `COMFYUI_INPUT_DIR`：ComfyUI 的 `input` 目录（当 `IMAGE_UPLOAD_MODE=local` 或 `auto` fallback 时需要）
+- `COMFYUI_INPUT_DIR`：ComfyUI 的 `input` 目录（当 `IMAGE_UPLOAD_MODE=local` 或 `auto` fallback 时需要；如果 ComfyUI 在 WSL，通常不需要配置）
 - `WORKFLOWS_DIR`：默认 `.\comfyui-api-workflows`
 - `RUNS_DIR`：默认 `.\runs`
 - `INPUT_SUBDIR`：默认 `comfyui2api`（写入 `input` 下的子目录）
@@ -90,10 +103,79 @@ curl -s -X POST http://127.0.0.1:8000/v1/images/generations -H "Content-Type: ap
 
 ### 任务/队列（扩展）
 
+- `GET /v1/workflows`：列出 `WORKFLOWS_DIR` 下已加载的工作流（含 kind/mtime）
 - `POST /v1/jobs`：通用提交（可指定 `workflow` / `prompt_node` / `image_node` / `overrides` 等）
 - `GET /v1/jobs/{job_id}`：查询任务状态
 - `GET /v1/queue`：队列概览
 - `WS /v1/jobs/{job_id}/ws`：实时事件（progress/executing/status/error/completed）
+
+#### 调用方：如何使用工作流 & 替换 prompt/image
+
+1) **准备工作流文件**  
+把工作流导出为 **API 格式**（ComfyUI：`File -> Export (API)`），放到 `WORKFLOWS_DIR`（默认 `./comfyui-api-workflows`）下。
+
+2) **列出工作流（给调用方选 model/workflow）**
+
+```bash
+curl -s http://127.0.0.1:8000/v1/workflows
+```
+
+（可选）**查看某个工作流可替换的节点引用（prompt/image 候选）**
+
+```bash
+curl -s http://127.0.0.1:8000/v1/workflows/img2video.json/targets
+```
+
+3) **提交任务：替换提示词（prompt/negative_prompt）**
+
+- 你可以直接传 `prompt` / `negative_prompt`，服务会尝试在工作流里**自动定位**可替换的文本节点。  
+- 如果工作流里有多个候选文本节点导致**无法唯一定位**，会返回报错并列出候选项；这时给出明确的 `prompt_node` / `negative_prompt_node` 重试即可。
+- 节点引用格式：`"<node_id>.<input_key>"`（例如 `68:6.text`、`57:27.text`）。
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/v1/jobs -H "Content-Type: application/json" -d @- <<'JSON'
+{
+  "kind": "txt2img",
+  "workflow": "文生图_z_image_turbo.json",
+  "prompt": "a cute cat, pixel art",
+  "prompt_node": "57:27.text"
+}
+JSON
+```
+
+4) **提交任务：替换输入图片（LoadImage）**
+
+- 如果你的工作流包含 `LoadImage`，可以用下面两种方式替换：
+  - 传 `image`：ComfyUI `input/` 目录下的**相对路径**（例如 `comfyui2api/xxx.jpg`）
+  - 传 `image_base64`：base64 或 data URL（服务会按 `IMAGE_UPLOAD_MODE` 自动上传到 ComfyUI 或写入 `COMFYUI_INPUT_DIR/INPUT_SUBDIR`）
+- 同样地，如果有多个 `LoadImage` 候选节点，指定 `image_node`（例如 `46.image`）即可。
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/v1/jobs -H "Content-Type: application/json" -d @- <<'JSON'
+{
+  "kind": "img2img",
+  "workflow": "图生图_flux2.json",
+  "prompt": "make it cinematic lighting",
+  "image": "comfyui2api/your_input.jpg",
+  "image_node": "46.image"
+}
+JSON
+```
+
+5) **通用替换：overrides（改任意节点输入）**
+
+当你要改 seed/steps/cfg/尺寸/任意自定义节点参数时，用 `overrides`（字典）：
+
+```json
+{
+  "overrides": {
+    "57:3.seed": 123,
+    "57:3.steps": 6
+  }
+}
+```
+
+提示：`node_id` 和 `input_key` 最可靠的获取方式是直接打开你的 API 工作流 JSON，查找目标节点的 key（例如 `"57:3"`）以及 `inputs` 里的字段名（例如 `"seed"`、`"text"`、`"image"`）。
 
 ## Docker（可选）
 

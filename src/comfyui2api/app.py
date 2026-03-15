@@ -6,7 +6,7 @@ import ipaddress
 import json
 import socket
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Mapping, Optional
 
 import httpx
 from fastapi import (
@@ -23,8 +23,16 @@ from fastapi import (
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from .comfy_client import ComfyUIClient
+from .comfy_workflow import (
+    extract_prompt_and_extra,
+    find_load_image_targets,
+    find_text_prompt_targets,
+    pick_unique_load_image_target,
+    pick_unique_target,
+)
 from .config import Config, load_config
 from .jobs import JobManager
 from .util import (
@@ -34,6 +42,12 @@ from .util import (
     sanitize_filename_part,
     save_input_image,
     utc_now_unix,
+)
+from .workflow_params import (
+    STANDARD_PARAMETER_ORDER,
+    detect_parameter_candidates,
+    generate_parameter_template,
+    public_parameter_spec,
 )
 from .workflow_registry import WorkflowRegistry
 
@@ -58,6 +72,117 @@ def _uuid_now_hex() -> str:
     return uuid.uuid4().hex
 
 
+def _auth_value_from_ws(ws: WebSocket) -> str | None:
+    header_value = (ws.headers.get("authorization") or "").strip()
+    if header_value:
+        return header_value
+
+    for key in ("authorization", "api_key", "token", "access_token"):
+        raw = (ws.query_params.get(key) or "").strip()
+        if not raw:
+            continue
+        if key == "authorization" or raw.lower().startswith("bearer "):
+            return raw
+        return f"Bearer {raw}"
+
+    return None
+
+
+class _RequestBodyTooLargeError(RuntimeError):
+    def __init__(self, size: int) -> None:
+        super().__init__(size)
+        self.size = size
+
+
+class MaxBodySizeMiddleware:
+    def __init__(self, app: ASGIApp, *, max_body_bytes: int) -> None:
+        self.app = app
+        self.max_body_bytes = max(0, int(max_body_bytes))
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or self.max_body_bytes <= 0:
+            await self.app(scope, receive, send)
+            return
+
+        response_started = False
+        seen = 0
+        headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers", [])}
+        content_length = headers.get("content-length")
+        if content_length:
+            try:
+                declared = int(content_length)
+            except ValueError:
+                declared = None
+            if declared is not None and declared > self.max_body_bytes:
+                response = JSONResponse(
+                    status_code=413,
+                    content={
+                        "error": {
+                            "message": f"Request body too large ({declared} bytes)",
+                            "type": "invalid_request_error",
+                        }
+                    },
+                )
+                await response(scope, receive, send)
+                return
+
+        async def limited_receive() -> Message:
+            nonlocal seen
+            message = await receive()
+            if message["type"] != "http.request":
+                return message
+            body = message.get("body", b"")
+            seen += len(body)
+            if seen > self.max_body_bytes:
+                raise _RequestBodyTooLargeError(seen)
+            return message
+
+        async def tracked_send(message: Message) -> None:
+            nonlocal response_started
+            if message["type"] == "http.response.start":
+                response_started = True
+            await send(message)
+
+        try:
+            await self.app(scope, limited_receive, tracked_send)
+        except _RequestBodyTooLargeError as exc:
+            if response_started:
+                return
+            response = JSONResponse(
+                status_code=413,
+                content={
+                    "error": {
+                        "message": f"Request body too large ({exc.size} bytes)",
+                        "type": "invalid_request_error",
+                    }
+                },
+            )
+            await response(scope, receive, send)
+
+
+def _clean_optional_value(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        cleaned = value.strip()
+        return cleaned if cleaned else None
+    return value
+
+
+def _collect_standard_params(values: Mapping[str, Any], *, aliases: Mapping[str, str] | None = None) -> dict[str, Any]:
+    alias_map = dict(aliases or {})
+    params: dict[str, Any] = {}
+    for key, raw_value in values.items():
+        name = alias_map.get(key, key)
+        if name not in STANDARD_PARAMETER_ORDER:
+            continue
+        value = _clean_optional_value(raw_value)
+        if value is None:
+            continue
+        params[name] = value
+    return params
+
+
 def create_app() -> FastAPI:
     cfg = load_config()
     registry = WorkflowRegistry(cfg.workflows_dir)
@@ -65,6 +190,7 @@ def create_app() -> FastAPI:
     jobs = JobManager(cfg=cfg, registry=registry, comfy=comfy)
 
     app = FastAPI(title="comfyui2api", version="0.1.0")
+    app.add_middleware(MaxBodySizeMiddleware, max_body_bytes=cfg.max_body_bytes)
     app.state.cfg = cfg
     app.state.registry = registry
     app.state.comfy = comfy
@@ -112,6 +238,110 @@ def create_app() -> FastAPI:
                 }
             )
         return {"workflows_dir": str(cfg.workflows_dir), "items": items}
+
+    async def _resolve_workflow_name(name: str):
+        requested = (name or "").strip()
+        if not requested:
+            raise _openai_error("Missing workflow name", http_status=400)
+
+        wf = await registry.get(requested)
+        if wf:
+            return wf
+        for item in await registry.list():
+            if item.name.lower() == requested.lower():
+                return item
+
+        if not requested.lower().endswith(".json"):
+            maybe = requested + ".json"
+            wf = await registry.get(maybe)
+            if wf:
+                return wf
+            for item in await registry.list():
+                if item.name.lower() == maybe.lower():
+                    return item
+
+        raise _openai_error("Workflow not found", http_status=404)
+
+    @app.get("/v1/workflows/{name}/targets")
+    async def workflow_targets(name: str, authorization: Optional[str] = Header(default=None)) -> Dict[str, Any]:
+        _require_auth(cfg, authorization)
+        wf = await _resolve_workflow_name(name)
+
+        prompt, _extra_data = extract_prompt_and_extra(wf.workflow_obj)
+        pos, neg = find_text_prompt_targets(prompt)
+        img = find_load_image_targets(prompt)
+
+        def _as_candidates(items: list[tuple[str, str, str, str]]) -> list[dict[str, Any]]:
+            out: list[dict[str, Any]] = []
+            for node_id, input_key, cls, title in items:
+                out.append(
+                    {
+                        "ref": f"{node_id}.{input_key}",
+                        "node_id": node_id,
+                        "input_key": input_key,
+                        "class_type": cls,
+                        "title": title or None,
+                    }
+                )
+            return out
+
+        def _try_pick_text(kind: str, candidates: list[tuple[str, str, str, str]]) -> tuple[str | None, str | None]:
+            try:
+                node_id, input_key = pick_unique_target(kind=kind, candidates=candidates)
+                return f"{node_id}.{input_key}", None
+            except Exception as e:
+                return None, str(e)
+
+        def _try_pick_image(candidates: list[tuple[str, str, str, str]]) -> tuple[str | None, str | None]:
+            try:
+                node_id, input_key = pick_unique_load_image_target(candidates)
+                return f"{node_id}.{input_key}", None
+            except Exception as e:
+                return None, str(e)
+
+        pos_auto, pos_err = _try_pick_text("positive", pos)
+        neg_auto, neg_err = _try_pick_text("negative", neg)
+        img_auto, img_err = _try_pick_image(img)
+
+        return {
+            "workflow": {"name": wf.name, "kind": wf.capabilities.kind, "mtime_ns": wf.mtime_ns},
+            "targets": {
+                "positive_prompt": {"autodetect": pos_auto, "autodetect_error": pos_err, "candidates": _as_candidates(pos)},
+                "negative_prompt": {"autodetect": neg_auto, "autodetect_error": neg_err, "candidates": _as_candidates(neg)},
+                "image": {"autodetect": img_auto, "autodetect_error": img_err, "candidates": _as_candidates(img)},
+            },
+        }
+
+    @app.get("/v1/workflows/{name}/parameters")
+    async def workflow_parameters(name: str, authorization: Optional[str] = Header(default=None)) -> Dict[str, Any]:
+        _require_auth(cfg, authorization)
+        wf = await _resolve_workflow_name(name)
+        suggested_template = generate_parameter_template(
+            workflow_obj=wf.workflow_obj,
+            kind=wf.capabilities.kind,
+            spec=wf.parameter_spec,
+        )
+        return {
+            "workflow": {"name": wf.name, "kind": wf.capabilities.kind, "mtime_ns": wf.mtime_ns},
+            "parameter_mapping": public_parameter_spec(wf.parameter_spec),
+            "detected_candidates": detect_parameter_candidates(wf.workflow_obj),
+            "suggested_template": suggested_template,
+            "parameter_error": wf.parameter_error,
+        }
+
+    @app.get("/v1/workflows/{name}/parameters/template")
+    async def workflow_parameters_template(name: str, authorization: Optional[str] = Header(default=None)) -> Dict[str, Any]:
+        _require_auth(cfg, authorization)
+        wf = await _resolve_workflow_name(name)
+        return {
+            "workflow": {"name": wf.name, "kind": wf.capabilities.kind, "mtime_ns": wf.mtime_ns},
+            "template": generate_parameter_template(
+                workflow_obj=wf.workflow_obj,
+                kind=wf.capabilities.kind,
+                spec=wf.parameter_spec,
+            ),
+            "parameter_error": wf.parameter_error,
+        }
 
     def _build_upload_filename(*, job_id: str, data: bytes, filename_hint: str | None) -> str:
         ext = ""
@@ -301,6 +531,14 @@ def create_app() -> FastAPI:
                 node_id, input_key = k.split(".", 1)
                 overrides.append((node_id.strip(), input_key.strip(), v))
 
+        standard_params = _collect_standard_params(
+            {key: body.get(key) for key in STANDARD_PARAMETER_ORDER if key in body},
+            aliases={"seconds": "duration"},
+        )
+        seconds_value = _clean_optional_value(body.get("seconds"))
+        if seconds_value is not None and "duration" not in standard_params:
+            standard_params["duration"] = seconds_value
+
         job = await jobs.create_job(
             kind=kind,
             workflow=workflow,
@@ -311,6 +549,7 @@ def create_app() -> FastAPI:
             negative_prompt_node=negative_prompt_node,
             image_node=image_node,
             overrides=overrides,
+            standard_params=standard_params,
         )
 
         base = _base_url(request)
@@ -356,6 +595,11 @@ def create_app() -> FastAPI:
 
     @app.websocket("/v1/jobs/{job_id}/ws")
     async def job_ws(ws: WebSocket, job_id: str) -> None:
+        try:
+            _require_auth(cfg, _auth_value_from_ws(ws))
+        except HTTPException:
+            await ws.close(code=1008)
+            return
         await ws.accept()
         job = await jobs.get_job(job_id)
         if not job:
@@ -399,8 +643,15 @@ def create_app() -> FastAPI:
         workflow = str(body.get("workflow") or body.get("model") or "").strip() or cfg.default_txt2img_workflow
         negative_prompt = str(body.get("negative_prompt") or "").strip()
         response_format = str(body.get("response_format") or "url").strip()
+        standard_params = _collect_standard_params({key: body.get(key) for key in STANDARD_PARAMETER_ORDER if key in body})
 
-        job = await jobs.create_job(kind="txt2img", workflow=workflow, prompt=prompt, negative_prompt=negative_prompt)
+        job = await jobs.create_job(
+            kind="txt2img",
+            workflow=workflow,
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            standard_params=standard_params,
+        )
         if x_comfyui_async and str(x_comfyui_async).strip() not in {"0", "false", "False"}:
             return {"job_id": job.job_id, "status": "pending"}
 
@@ -424,6 +675,12 @@ def create_app() -> FastAPI:
         workflow: str = Form(""),
         negative_prompt: str = Form(""),
         response_format: str = Form("url"),
+        size: str = Form(""),
+        width: str = Form(""),
+        height: str = Form(""),
+        steps: str = Form(""),
+        cfg_scale: str = Form("", alias="cfg"),
+        seed: str = Form(""),
         authorization: Optional[str] = Header(default=None),
         x_comfyui_async: Optional[str] = Header(default=None),
     ) -> Any:
@@ -432,12 +689,23 @@ def create_app() -> FastAPI:
         image_rel = await _store_input_image_bytes(data=raw, filename_hint=image.filename)
 
         wf = (workflow or model or "").strip() or cfg.default_img2img_workflow
+        standard_params = _collect_standard_params(
+            {
+                "size": size,
+                "width": width,
+                "height": height,
+                "steps": steps,
+                "cfg": cfg_scale,
+                "seed": seed,
+            }
+        )
         job = await jobs.create_job(
             kind="img2img",
             workflow=wf,
             prompt=(prompt or "").strip(),
             negative_prompt=(negative_prompt or "").strip(),
             image=image_rel,
+            standard_params=standard_params,
         )
         if x_comfyui_async and str(x_comfyui_async).strip() not in {"0", "false", "False"}:
             return {"job_id": job.job_id, "status": "pending"}
@@ -460,6 +728,12 @@ def create_app() -> FastAPI:
         model: str = Form(""),
         workflow: str = Form(""),
         response_format: str = Form("url"),
+        size: str = Form(""),
+        width: str = Form(""),
+        height: str = Form(""),
+        steps: str = Form(""),
+        cfg_scale: str = Form("", alias="cfg"),
+        seed: str = Form(""),
         authorization: Optional[str] = Header(default=None),
         x_comfyui_async: Optional[str] = Header(default=None),
     ) -> Any:
@@ -468,7 +742,23 @@ def create_app() -> FastAPI:
         image_rel = await _store_input_image_bytes(data=raw, filename_hint=image.filename)
 
         wf = (workflow or model or "").strip() or cfg.default_img2img_workflow
-        job = await jobs.create_job(kind="img2img", workflow=wf, prompt="", image=image_rel)
+        standard_params = _collect_standard_params(
+            {
+                "size": size,
+                "width": width,
+                "height": height,
+                "steps": steps,
+                "cfg": cfg_scale,
+                "seed": seed,
+            }
+        )
+        job = await jobs.create_job(
+            kind="img2img",
+            workflow=wf,
+            prompt="",
+            image=image_rel,
+            standard_params=standard_params,
+        )
         if x_comfyui_async and str(x_comfyui_async).strip() not in {"0", "false", "False"}:
             return {"job_id": job.job_id, "status": "pending"}
 
@@ -499,7 +789,17 @@ def create_app() -> FastAPI:
             raise _openai_error("No txt2video workflow configured", http_status=400)
 
         negative_prompt = str(body.get("negative_prompt") or "").strip()
-        job = await jobs.create_job(kind="txt2video", workflow=workflow, prompt=prompt, negative_prompt=negative_prompt)
+        standard_params = _collect_standard_params({key: body.get(key) for key in STANDARD_PARAMETER_ORDER if key in body})
+        seconds_value = _clean_optional_value(body.get("seconds"))
+        if seconds_value is not None and "duration" not in standard_params:
+            standard_params["duration"] = seconds_value
+        job = await jobs.create_job(
+            kind="txt2video",
+            workflow=workflow,
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            standard_params=standard_params,
+        )
         if x_comfyui_async and str(x_comfyui_async).strip() not in {"0", "false", "False"}:
             return {"job_id": job.job_id, "status": "pending"}
 
@@ -516,6 +816,15 @@ def create_app() -> FastAPI:
         model: str = Form(""),
         workflow: str = Form(""),
         negative_prompt: str = Form(""),
+        size: str = Form(""),
+        fps: str = Form(""),
+        duration: str = Form(""),
+        frames: str = Form(""),
+        width: str = Form(""),
+        height: str = Form(""),
+        steps: str = Form(""),
+        cfg_scale: str = Form("", alias="cfg"),
+        seed: str = Form(""),
         authorization: Optional[str] = Header(default=None),
         x_comfyui_async: Optional[str] = Header(default=None),
     ) -> Any:
@@ -524,12 +833,26 @@ def create_app() -> FastAPI:
         image_rel = await _store_input_image_bytes(data=raw, filename_hint=image.filename)
 
         wf = (workflow or model or "").strip() or cfg.default_img2video_workflow
+        standard_params = _collect_standard_params(
+            {
+                "size": size,
+                "fps": fps,
+                "duration": duration,
+                "frames": frames,
+                "width": width,
+                "height": height,
+                "steps": steps,
+                "cfg": cfg_scale,
+                "seed": seed,
+            }
+        )
         job = await jobs.create_job(
             kind="img2video",
             workflow=wf,
             prompt=(prompt or "").strip(),
             negative_prompt=(negative_prompt or "").strip(),
             image=image_rel,
+            standard_params=standard_params,
         )
         if x_comfyui_async and str(x_comfyui_async).strip() not in {"0", "false", "False"}:
             return {"job_id": job.job_id, "status": "pending"}
@@ -591,6 +914,8 @@ def create_app() -> FastAPI:
         model: str = Form(""),
         seconds: str = Form(""),
         size: str = Form(""),
+        fps: str = Form(""),
+        frames: str = Form(""),
         input_reference: Optional[UploadFile] = File(default=None),
         metadata: str = Form(""),
         authorization: Optional[str] = Header(default=None),
@@ -609,6 +934,14 @@ def create_app() -> FastAPI:
             kind = "img2video"
 
         workflow, requested_model = await _workflow_from_model_or_default(kind=kind, model=model)
+        standard_params = _collect_standard_params(
+            {
+                "duration": seconds,
+                "size": size,
+                "fps": fps,
+                "frames": frames,
+            }
+        )
         job = await jobs.create_job(
             kind=kind,
             workflow=workflow,
@@ -619,6 +952,7 @@ def create_app() -> FastAPI:
             metadata=(metadata or "").strip(),
             prompt=prompt,
             image=image_rel,
+            standard_params=standard_params,
         )
 
         return {
@@ -739,6 +1073,19 @@ def create_app() -> FastAPI:
             image_rel = await _store_input_image_value(image_val, filename_hint="image")
 
         workflow, requested_model = await _workflow_from_model_or_default(kind=kind, model=model)
+        standard_params = _collect_standard_params(
+            {
+                "duration": body.get("duration"),
+                "size": body.get("size"),
+                "fps": body.get("fps"),
+                "frames": body.get("frames"),
+                "width": body.get("width"),
+                "height": body.get("height"),
+                "steps": body.get("steps"),
+                "cfg": body.get("cfg"),
+                "seed": body.get("seed"),
+            }
+        )
 
         meta_obj: Dict[str, Any] = {}
         raw_meta = body.get("metadata")
@@ -758,6 +1105,7 @@ def create_app() -> FastAPI:
             metadata=json.dumps(meta_obj, ensure_ascii=False) if meta_obj else "",
             prompt=prompt,
             image=image_rel,
+            standard_params=standard_params,
         )
 
         return {"task_id": job.job_id, "status": "queued"}
