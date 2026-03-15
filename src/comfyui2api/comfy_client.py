@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Dict, Optional
@@ -36,6 +37,23 @@ def _join(base_url: str, path: str) -> str:
     return urljoin(base, path.lstrip("/"))
 
 
+def _base_host(base_url: str) -> str:
+    raw = base_url if "://" in base_url else f"http://{base_url}"
+    return (urlparse(raw).hostname or "").strip().lower()
+
+
+def _should_trust_env(base_url: str) -> bool:
+    host = _base_host(base_url)
+    if not host:
+        return True
+    if host == "localhost":
+        return False
+    try:
+        return not ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return True
+
+
 def _ws_url(base_url: str, *, client_id: str) -> str:
     u = urlparse(base_url)
     scheme = "wss" if u.scheme == "https" else "ws"
@@ -56,7 +74,7 @@ class ComfyUIClient:
     def __init__(self, base_url: str, *, http_timeout_s: int = 30) -> None:
         self.base_url = base_url.rstrip("/")
         self._timeout = httpx.Timeout(timeout=http_timeout_s)
-        self._client = httpx.AsyncClient(timeout=self._timeout)
+        self._client = httpx.AsyncClient(timeout=self._timeout, trust_env=_should_trust_env(self.base_url))
 
     async def aclose(self) -> None:
         await self._client.aclose()
