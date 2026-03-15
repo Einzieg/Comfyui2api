@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import logging
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -13,6 +14,9 @@ from .config import Config
 from .util import guess_media_type, json_dumps, pick_primary_url, sanitize_filename_part, utc_now_iso, utc_now_unix
 from .workflow_params import resolve_standard_overrides
 from .workflow_registry import WorkflowDefinition, WorkflowRegistry
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -210,9 +214,18 @@ class JobManager:
             try:
                 await self._run_job(job_id)
             except Exception as e:
-                await self._update(job_id, status="failed", error=str(e))
-                await self._publish(job_id, {"type": "job_failed", "data": {"error": str(e)}})
                 job = await self.get_job(job_id)
+                error_message = f"{type(e).__name__}: {e}"
+                logger.exception(
+                    "job failed: job_id=%s worker=%s workflow=%s kind=%s requested_model=%s",
+                    job_id,
+                    worker_index,
+                    job.workflow if job else "",
+                    job.kind if job else "",
+                    job.requested_model if job else "",
+                )
+                await self._update(job_id, status="failed", error=error_message)
+                await self._publish(job_id, {"type": "job_failed", "data": {"error": error_message}})
                 if job:
                     job.done.set()
             finally:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import importlib
 import json
 import os
@@ -222,6 +223,84 @@ class AppSmokeTests(unittest.TestCase):
             payload = ws.receive_json()
         self.assertEqual(payload["type"], "error")
         self.assertIn("Job not found", payload["data"]["message"])
+
+    def test_images_generations_failure_includes_job_id(self) -> None:
+        from comfyui2api.jobs import Job
+
+        done = asyncio.Event()
+        done.set()
+        failed_job = Job(
+            job_id="job-failed",
+            created_at_utc="2026-03-16T00:00:00Z",
+            created_at=123,
+            status="failed",
+            kind="txt2img",
+            workflow=self.workflow_name,
+            error="RuntimeError: prompt resolution failed",
+            done=done,
+        )
+
+        mock_create_job = AsyncMock(return_value=failed_job)
+        mock_get_job = AsyncMock(side_effect=[failed_job, failed_job])
+        with patch.object(self.app.state.jobs, "create_job", mock_create_job), patch.object(
+            self.app.state.jobs, "get_job", mock_get_job
+        ):
+            response = self.client.post(
+                "/v1/images/generations",
+                headers={"Authorization": "Bearer secret-token"},
+                json={"prompt": "cat"},
+            )
+
+        self.assertEqual(response.status_code, 500)
+        payload = response.json()
+        self.assertEqual(payload["error"]["type"], "server_error")
+        self.assertEqual(payload["error"]["job_id"], "job-failed")
+        self.assertIn("RuntimeError: prompt resolution failed", payload["error"]["message"])
+
+
+class JobManagerErrorHandlingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_worker_logs_traceback_and_records_exception_type(self) -> None:
+        import comfyui2api.jobs as jobs_module
+
+        manager = jobs_module.JobManager(
+            cfg=SimpleNamespace(worker_concurrency=1),
+            registry=SimpleNamespace(),
+            comfy=SimpleNamespace(),
+        )
+
+        with patch.object(manager, "_run_job", AsyncMock(side_effect=RuntimeError("boom"))), patch.object(
+            jobs_module.logger, "exception"
+        ) as mock_exception:
+            job = await manager.create_job(
+                kind="txt2img",
+                workflow="broken.json",
+                requested_model="broken-model",
+                prompt="cat",
+            )
+            worker = asyncio.create_task(manager._worker_loop(7))
+            try:
+                await asyncio.wait_for(job.done.wait(), timeout=1)
+            finally:
+                worker.cancel()
+                await asyncio.gather(worker, return_exceptions=True)
+
+        updated = await manager.get_job(job.job_id)
+        self.assertIsNotNone(updated)
+        assert updated is not None
+        self.assertEqual(updated.status, "failed")
+        self.assertEqual(updated.error, "RuntimeError: boom")
+        mock_exception.assert_called_once()
+        self.assertEqual(
+            mock_exception.call_args.args,
+            (
+                "job failed: job_id=%s worker=%s workflow=%s kind=%s requested_model=%s",
+                job.job_id,
+                7,
+                "broken.json",
+                "txt2img",
+                "broken-model",
+            ),
+        )
 
 
 if __name__ == "__main__":

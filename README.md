@@ -32,6 +32,38 @@ python -m comfyui2api
 
 服务默认监听 `0.0.0.0:8000`。
 
+### 一键启动
+
+Windows 下可以直接使用项目根目录的启动脚本：
+
+```powershell
+.\start.ps1
+```
+
+如果你更习惯双击，也可以直接运行：
+
+```powershell
+.\start.bat
+```
+
+脚本会自动：
+
+- 优先使用 `.venv\Scripts\python.exe`
+- 当 `.venv` 不存在时自动创建虚拟环境
+- 当项目还没有安装到虚拟环境时自动执行 `pip install -e .`
+- 默认设置 `COMFYUI_BASE_URL=http://127.0.0.1:8188`
+- 默认设置 `IMAGE_UPLOAD_MODE=comfy`
+- 尝试检查 ComfyUI 是否可达
+
+常用参数示例：
+
+```powershell
+.\start.ps1 -ListenHost 127.0.0.1 -Port 9000
+.\start.ps1 -CheckOnly
+.\start.ps1 -SkipComfyCheck
+.\start.ps1 -EnvFile .\.env
+```
+
 ### ComfyUI 在 WSL 中运行
 
 如果 `comfyui2api` 跑在 Windows，而 ComfyUI 跑在 WSL，通常可以直接继续使用：

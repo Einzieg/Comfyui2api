@@ -52,10 +52,19 @@ from .workflow_params import (
 from .workflow_registry import WorkflowRegistry
 
 
-def _openai_error(message: str, *, code: str = "invalid_request_error", http_status: int = 400) -> HTTPException:
+def _openai_error(
+    message: str,
+    *,
+    code: str = "invalid_request_error",
+    http_status: int = 400,
+    extra: Mapping[str, Any] | None = None,
+) -> HTTPException:
+    error = {"message": message, "type": code}
+    if extra:
+        error.update(extra)
     return HTTPException(
         status_code=http_status,
-        detail={"error": {"message": message, "type": code}},
+        detail={"error": error},
     )
 
 
@@ -626,7 +635,12 @@ def create_app() -> FastAPI:
         if not job:
             raise _openai_error("Job not found", http_status=404)
         if job.status != "completed":
-            raise _openai_error(job.error or "Job failed", http_status=500)
+            raise _openai_error(
+                job.error or "Job failed",
+                code="server_error",
+                http_status=500,
+                extra={"job_id": job_id},
+            )
         return jobs.public_job(job)
 
     @app.post("/v1/images/generations")
