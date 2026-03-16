@@ -257,7 +257,21 @@ class JobManager:
         await self._update(job_id, client_id=client_id, status="queued")
         await self._publish(job_id, {"type": "job_queued", "data": {"client_id": client_id, "workflow": wf.name}})
 
-        prompt_graph, extra_data, applied = prepare_prompt(
+        logger.info(
+            "job prompt request: %s",
+            json_dumps(
+                {
+                    "job_id": job_id,
+                    "workflow": wf.name,
+                    "kind": job.kind,
+                    "requested_model": job.requested_model or None,
+                    "prompt": job.prompt or None,
+                    "negative_prompt": job.negative_prompt or None,
+                }
+            ),
+        )
+
+        prompt_graph, extra_data, applied, prompt_trace = prepare_prompt(
             workflow_obj=job_obj,
             positive_prompt=job.prompt or None,
             negative_prompt=job.negative_prompt or None,
@@ -282,6 +296,22 @@ class JobManager:
                 removed_nodes,
                 normalized_inputs,
             )
+
+        logger.info(
+            "job prompt prepared: %s",
+            json_dumps(
+                {
+                    "job_id": job_id,
+                    "workflow": wf.name,
+                    "kind": job.kind,
+                    "requested_model": job.requested_model or None,
+                    "requested_prompt": job.prompt or None,
+                    "requested_negative_prompt": job.negative_prompt or None,
+                    "effective_positive_prompts": prompt_trace.get("positive") or [],
+                    "effective_negative_prompts": prompt_trace.get("negative") or [],
+                }
+            ),
+        )
 
         qp = await self.comfy.queue_prompt(prompt=prompt_graph, client_id=client_id, extra_data=extra_data)
         await self._update(job_id, prompt_id=qp.prompt_id, queue_number=qp.number)

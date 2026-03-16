@@ -366,10 +366,11 @@ def prepare_prompt(
     image: Optional[str],
     image_node: Optional[str],
     overrides: List[Tuple[str, str, Any]],
-) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]], List[Tuple[str, str, Any]]]:
+) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]], List[Tuple[str, str, Any]], Dict[str, List[Dict[str, Any]]]]:
     prompt, extra_data = extract_prompt_and_extra(workflow_obj)
 
     prompt_overrides: List[Tuple[str, str, Any]] = []
+    selected_targets: Dict[str, List[Tuple[str, str]]] = {"positive": [], "negative": []}
     need_auto = False
     if positive_prompt and not (positive_prompt_node or "").strip():
         need_auto = True
@@ -392,6 +393,7 @@ def prepare_prompt(
         else:
             node_id, input_key = pick_unique_target(kind="positive", candidates=pos_candidates)
         prompt_overrides.append((node_id, input_key, str(positive_prompt)))
+        selected_targets["positive"].append((node_id, input_key))
 
     if negative_prompt:
         node_ref = (negative_prompt_node or "").strip()
@@ -400,6 +402,7 @@ def prepare_prompt(
         else:
             node_id, input_key = pick_unique_target(kind="negative", candidates=neg_candidates)
         prompt_overrides.append((node_id, input_key, str(negative_prompt)))
+        selected_targets["negative"].append((node_id, input_key))
 
     if image:
         node_ref = (image_node or "").strip()
@@ -412,7 +415,32 @@ def prepare_prompt(
     combined_overrides = prompt_overrides + list(overrides or [])
     if combined_overrides:
         apply_overrides(prompt, combined_overrides)
-    return prompt, extra_data, combined_overrides
+
+    prompt_trace: Dict[str, List[Dict[str, Any]]] = {}
+    for kind, refs in selected_targets.items():
+        if not refs:
+            continue
+        items: List[Dict[str, Any]] = []
+        for node_id, input_key in refs:
+            node = prompt.get(node_id)
+            if not isinstance(node, dict):
+                continue
+            inputs = node.get("inputs")
+            if not isinstance(inputs, dict):
+                continue
+            value = inputs.get(input_key)
+            items.append(
+                {
+                    "node_id": node_id,
+                    "input_key": input_key,
+                    "class_type": as_str(node.get("class_type")) or None,
+                    "title": get_node_title(node) or None,
+                    "value": value,
+                }
+            )
+        if items:
+            prompt_trace[kind] = items
+    return prompt, extra_data, combined_overrides, prompt_trace
 
 
 def iter_file_outputs(history_entry: Dict[str, Any]) -> Iterable[Tuple[str, str, Dict[str, Any]]]:

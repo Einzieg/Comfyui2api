@@ -10,10 +10,68 @@ SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from comfyui2api.comfy_workflow import normalize_prompt_enum_inputs, prune_invalid_orphan_output_nodes
+from comfyui2api.comfy_workflow import normalize_prompt_enum_inputs, prepare_prompt, prune_invalid_orphan_output_nodes
 
 
 class ComfyWorkflowSanitizationTests(unittest.TestCase):
+    def test_prepare_prompt_reports_effective_prompt_targets(self) -> None:
+        workflow = {
+            "prompt": {
+                "1": {
+                    "class_type": "CLIPTextEncode",
+                    "inputs": {"text": "old positive"},
+                    "_meta": {"title": "Positive Prompt"},
+                },
+                "2": {
+                    "class_type": "CLIPTextEncode",
+                    "inputs": {"text": "old negative"},
+                    "_meta": {"title": "Negative Prompt"},
+                },
+            }
+        }
+
+        prompt, extra_data, applied, trace = prepare_prompt(
+            workflow_obj=workflow,
+            positive_prompt="new positive",
+            negative_prompt="new negative",
+            positive_prompt_node=None,
+            negative_prompt_node=None,
+            image=None,
+            image_node=None,
+            overrides=[],
+        )
+
+        self.assertIsNone(extra_data)
+        self.assertEqual(
+            applied,
+            [("1", "text", "new positive"), ("2", "text", "new negative")],
+        )
+        self.assertEqual(prompt["1"]["inputs"]["text"], "new positive")
+        self.assertEqual(prompt["2"]["inputs"]["text"], "new negative")
+        self.assertEqual(
+            trace,
+            {
+                "positive": [
+                    {
+                        "node_id": "1",
+                        "input_key": "text",
+                        "class_type": "CLIPTextEncode",
+                        "title": "Positive Prompt",
+                        "value": "new positive",
+                    }
+                ],
+                "negative": [
+                    {
+                        "node_id": "2",
+                        "input_key": "text",
+                        "class_type": "CLIPTextEncode",
+                        "title": "Negative Prompt",
+                        "value": "new negative",
+                    }
+                ],
+            },
+        )
+
     def test_prunes_orphan_output_nodes_missing_required_inputs(self) -> None:
         prompt = {
             "10": {
