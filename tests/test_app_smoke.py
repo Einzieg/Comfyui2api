@@ -88,6 +88,20 @@ class AppSmokeTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
+        txt2video_workflow_name = "test_txt2video.json"
+        (workflows_dir / txt2video_workflow_name).write_text(
+            json.dumps(
+                {
+                    "prompt": {
+                        "1": {"class_type": "CLIPTextEncode", "inputs": {"text": "hello"}},
+                        "2": {"class_type": "SaveVideo", "inputs": {"filename_prefix": "sample"}},
+                        "3": {"class_type": "VideoCombine", "inputs": {"fps": 24, "frames": 96}},
+                    }
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
 
         env = {
             "API_TOKEN": "secret-token",
@@ -97,7 +111,7 @@ class AppSmokeTests(unittest.TestCase):
             "DEFAULT_IMG2IMG_WORKFLOW": workflow_name,
             "DEFAULT_IMG2VIDEO_WORKFLOW": workflow_name,
             "ENABLE_WORKFLOW_WATCH": "0",
-            "MAX_BODY_BYTES": "256",
+            "MAX_BODY_BYTES": "1024",
             "RUNS_DIR": str(runs_dir),
             "WORKER_CONCURRENCY": "1",
             "WORKFLOWS_DIR": str(workflows_dir),
@@ -110,6 +124,7 @@ class AppSmokeTests(unittest.TestCase):
         cls.app_module = importlib.reload(app_module)
         cls.app = cls.app_module.app
         cls.workflow_name = workflow_name
+        cls.txt2video_workflow_name = txt2video_workflow_name
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -191,6 +206,23 @@ class AppSmokeTests(unittest.TestCase):
         kwargs = mock_create_job.await_args.kwargs
         self.assertEqual(kwargs["standard_params"], {"size": "1024x768", "seed": 7, "steps": 12})
 
+    def test_images_edits_rejects_txt2img_workflow_with_clear_400(self) -> None:
+        mock_create_job = AsyncMock()
+        with patch.object(self.app.state.jobs, "create_job", mock_create_job):
+            response = self.client.post(
+                "/v1/images/edits",
+                headers={"Authorization": "Bearer secret-token"},
+                data={"prompt": "cat", "workflow": self.workflow_name},
+                files={"image": ("input.png", b"fake-image", "image/png")},
+            )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+        self.assertEqual(payload["error"]["type"], "invalid_request_error")
+        self.assertIn("does not support img2img", payload["error"]["message"])
+        self.assertIn("missing LoadImage", payload["error"]["message"])
+        mock_create_job.assert_not_awaited()
+
     def test_videos_create_passes_duration_and_fps_standard_params(self) -> None:
         mock_create_job = AsyncMock(
             return_value=SimpleNamespace(job_id="job-video", requested_model=self.workflow_name, created_at=123)
@@ -201,7 +233,7 @@ class AppSmokeTests(unittest.TestCase):
                 headers={"Authorization": "Bearer secret-token"},
                 data={
                     "prompt": "cat animation",
-                    "model": self.workflow_name,
+                    "model": self.txt2video_workflow_name,
                     "seconds": "5",
                     "size": "1280x720",
                     "fps": "24",

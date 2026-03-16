@@ -203,6 +203,38 @@ def _extract_status_code(error_message: str) -> int | None:
         return None
 
 
+def _workflow_supports_kind(wf: Any, kind: str) -> bool:
+    caps = getattr(wf, "capabilities", None)
+    if caps is None:
+        return True
+    if kind == "txt2img":
+        return bool(getattr(caps, "has_save_image", False))
+    if kind == "img2img":
+        return bool(getattr(caps, "has_save_image", False) and getattr(caps, "has_load_image", False))
+    if kind == "txt2video":
+        return bool(getattr(caps, "has_save_video", False))
+    if kind == "img2video":
+        return bool(getattr(caps, "has_save_video", False) and getattr(caps, "has_load_image", False))
+    return True
+
+
+def _workflow_kind_error_message(*, wf: Any, kind: str) -> str:
+    caps = getattr(wf, "capabilities", None)
+    detected_kind = getattr(caps, "kind", "unknown") if caps is not None else "unknown"
+    missing: list[str] = []
+    if kind in {"img2img", "img2video"} and not getattr(caps, "has_load_image", False):
+        missing.append("missing LoadImage")
+    if kind in {"txt2img", "img2img"} and not getattr(caps, "has_save_image", False):
+        missing.append("missing SaveImage")
+    if kind in {"txt2video", "img2video"} and not getattr(caps, "has_save_video", False):
+        missing.append("missing SaveVideo")
+
+    detail = f"detected kind={detected_kind}"
+    if missing:
+        detail += f"; {', '.join(missing)}"
+    return f"Workflow '{wf.name}' does not support {kind} ({detail})."
+
+
 def create_app() -> FastAPI:
     cfg = load_config()
     registry = WorkflowRegistry(cfg.workflows_dir)
@@ -288,6 +320,13 @@ def create_app() -> FastAPI:
                     return item
 
         raise _openai_error("Workflow not found", http_status=404)
+
+    async def _resolve_workflow_for_kind(*, kind: str, requested_name: str) -> Any:
+        resolved_name = (requested_name or "").strip() or await _pick_default_workflow(kind)
+        wf = await _resolve_workflow_name(resolved_name)
+        if not _workflow_supports_kind(wf, kind):
+            raise _openai_error(_workflow_kind_error_message(wf=wf, kind=kind), http_status=400)
+        return wf
 
     @app.get("/v1/workflows/{name}/targets")
     async def workflow_targets(name: str, authorization: Optional[str] = Header(default=None)) -> Dict[str, Any]:
@@ -533,7 +572,9 @@ def create_app() -> FastAPI:
         _require_auth(cfg, authorization)
 
         kind = str(body.get("kind") or "").strip()
-        workflow = str(body.get("workflow") or "").strip() or await _pick_default_workflow(kind)
+        requested_workflow = str(body.get("workflow") or "").strip()
+        wf = await _resolve_workflow_for_kind(kind=kind, requested_name=requested_workflow)
+        workflow = wf.name
         prompt = str(body.get("prompt") or "").strip()
         negative_prompt = str(body.get("negative_prompt") or "").strip()
 
@@ -686,7 +727,11 @@ def create_app() -> FastAPI:
         prompt = str(body.get("prompt") or "").strip()
         if not prompt:
             raise _openai_error("Missing 'prompt'")
-        workflow = str(body.get("workflow") or body.get("model") or "").strip() or cfg.default_txt2img_workflow
+        wf = await _resolve_workflow_for_kind(
+            kind="txt2img",
+            requested_name=str(body.get("workflow") or body.get("model") or "").strip(),
+        )
+        workflow = wf.name
         negative_prompt = str(body.get("negative_prompt") or "").strip()
         response_format = str(body.get("response_format") or "url").strip()
         standard_params = _collect_standard_params({key: body.get(key) for key in STANDARD_PARAMETER_ORDER if key in body})
@@ -731,10 +776,10 @@ def create_app() -> FastAPI:
         x_comfyui_async: Optional[str] = Header(default=None),
     ) -> Any:
         _require_auth(cfg, authorization)
+        wf = await _resolve_workflow_for_kind(kind="img2img", requested_name=(workflow or model or "").strip())
         raw = await image.read()
         image_rel = await _store_input_image_bytes(data=raw, filename_hint=image.filename)
 
-        wf = (workflow or model or "").strip() or cfg.default_img2img_workflow
         standard_params = _collect_standard_params(
             {
                 "size": size,
@@ -747,7 +792,7 @@ def create_app() -> FastAPI:
         )
         job = await jobs.create_job(
             kind="img2img",
-            workflow=wf,
+            workflow=wf.name,
             prompt=(prompt or "").strip(),
             negative_prompt=(negative_prompt or "").strip(),
             image=image_rel,
@@ -784,10 +829,10 @@ def create_app() -> FastAPI:
         x_comfyui_async: Optional[str] = Header(default=None),
     ) -> Any:
         _require_auth(cfg, authorization)
+        wf = await _resolve_workflow_for_kind(kind="img2img", requested_name=(workflow or model or "").strip())
         raw = await image.read()
         image_rel = await _store_input_image_bytes(data=raw, filename_hint=image.filename)
 
-        wf = (workflow or model or "").strip() or cfg.default_img2img_workflow
         standard_params = _collect_standard_params(
             {
                 "size": size,
@@ -800,7 +845,7 @@ def create_app() -> FastAPI:
         )
         job = await jobs.create_job(
             kind="img2img",
-            workflow=wf,
+            workflow=wf.name,
             prompt="",
             image=image_rel,
             standard_params=standard_params,
@@ -830,9 +875,11 @@ def create_app() -> FastAPI:
         prompt = str(body.get("prompt") or "").strip()
         if not prompt:
             raise _openai_error("Missing 'prompt'")
-        workflow = str(body.get("workflow") or body.get("model") or "").strip() or cfg.default_txt2video_workflow
-        if not workflow:
-            raise _openai_error("No txt2video workflow configured", http_status=400)
+        wf = await _resolve_workflow_for_kind(
+            kind="txt2video",
+            requested_name=str(body.get("workflow") or body.get("model") or "").strip(),
+        )
+        workflow = wf.name
 
         negative_prompt = str(body.get("negative_prompt") or "").strip()
         standard_params = _collect_standard_params({key: body.get(key) for key in STANDARD_PARAMETER_ORDER if key in body})
@@ -875,10 +922,10 @@ def create_app() -> FastAPI:
         x_comfyui_async: Optional[str] = Header(default=None),
     ) -> Any:
         _require_auth(cfg, authorization)
+        wf = await _resolve_workflow_for_kind(kind="img2video", requested_name=(workflow or model or "").strip())
         raw = await image.read()
         image_rel = await _store_input_image_bytes(data=raw, filename_hint=image.filename)
 
-        wf = (workflow or model or "").strip() or cfg.default_img2video_workflow
         standard_params = _collect_standard_params(
             {
                 "size": size,
@@ -894,7 +941,7 @@ def create_app() -> FastAPI:
         )
         job = await jobs.create_job(
             kind="img2video",
-            workflow=wf,
+            workflow=wf.name,
             prompt=(prompt or "").strip(),
             negative_prompt=(negative_prompt or "").strip(),
             image=image_rel,
@@ -934,24 +981,8 @@ def create_app() -> FastAPI:
 
     async def _workflow_from_model_or_default(*, kind: str, model: str) -> tuple[str, str]:
         requested = (model or "").strip()
-        if requested:
-            wf = await registry.get(requested)
-            if wf:
-                return requested, requested
-            for item in await registry.list():
-                if item.name.lower() == requested.lower():
-                    return item.name, requested
-            if not requested.lower().endswith(".json"):
-                maybe = requested + ".json"
-                wf = await registry.get(maybe)
-                if wf:
-                    return maybe, requested
-                for item in await registry.list():
-                    if item.name.lower() == maybe.lower():
-                        return item.name, requested
-
-        workflow = await _pick_default_workflow(kind)
-        return workflow, requested or workflow
+        wf = await _resolve_workflow_for_kind(kind=kind, requested_name=requested)
+        return wf.name, requested or wf.name
 
     @app.post("/v1/videos", status_code=201)
     async def openai_videos_create(
