@@ -102,6 +102,20 @@ class AppSmokeTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
+        hybrid_video_workflow_name = "test_hybrid_video.json"
+        (workflows_dir / hybrid_video_workflow_name).write_text(
+            json.dumps(
+                {
+                    "prompt": {
+                        "1": {"class_type": "CLIPTextEncode", "inputs": {"text": "hello"}},
+                        "2": {"class_type": "LoadImage", "inputs": {"image": "input.png"}},
+                        "3": {"class_type": "VHS_VideoCombine", "inputs": {"frame_rate": 24, "images": ["1", 0]}},
+                    }
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
 
         env = {
             "API_TOKEN": "secret-token",
@@ -125,6 +139,7 @@ class AppSmokeTests(unittest.TestCase):
         cls.app = cls.app_module.app
         cls.workflow_name = workflow_name
         cls.txt2video_workflow_name = txt2video_workflow_name
+        cls.hybrid_video_workflow_name = hybrid_video_workflow_name
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -146,8 +161,9 @@ class AppSmokeTests(unittest.TestCase):
         self.assertEqual(authorized.status_code, 200)
         payload = authorized.json()
         self.assertEqual(payload["object"], "list")
-        self.assertEqual(payload["data"][0]["id"], self.workflow_name)
-        self.assertEqual(payload["data"][0]["metadata"]["kind"], "txt2img")
+        by_id = {item["id"]: item for item in payload["data"]}
+        self.assertIn(self.workflow_name, by_id)
+        self.assertEqual(by_id[self.workflow_name]["metadata"]["kind"], "txt2img")
 
     def test_request_body_limit_returns_413(self) -> None:
         response = self.client.post("/v1/images/generations", json={"prompt": "x" * 2048})
@@ -244,6 +260,25 @@ class AppSmokeTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         kwargs = mock_create_job.await_args.kwargs
         self.assertEqual(kwargs["standard_params"], {"duration": "5", "size": "1280x720", "fps": "24", "frames": "120"})
+
+    def test_videos_create_accepts_hybrid_video_workflow_for_txt2video(self) -> None:
+        mock_create_job = AsyncMock(
+            return_value=SimpleNamespace(job_id="job-hybrid", requested_model=self.hybrid_video_workflow_name, created_at=123)
+        )
+        with patch.object(self.app.state.jobs, "create_job", mock_create_job):
+            response = self.client.post(
+                "/v1/videos",
+                headers={"Authorization": "Bearer secret-token"},
+                data={
+                    "prompt": "cat animation",
+                    "model": self.hybrid_video_workflow_name,
+                    "seconds": "5",
+                },
+                files={},
+            )
+        self.assertEqual(response.status_code, 201)
+        kwargs = mock_create_job.await_args.kwargs
+        self.assertEqual(kwargs["workflow"], self.hybrid_video_workflow_name)
 
     def test_websocket_rejects_missing_auth(self) -> None:
         with self.assertRaises(WebSocketDisconnect) as ctx:

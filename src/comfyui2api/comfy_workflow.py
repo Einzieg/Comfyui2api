@@ -347,7 +347,7 @@ def detect_capabilities(prompt: Dict[str, Any]) -> WorkflowCapabilities:
             has_load_image = True
         if "saveimage" in cls:
             has_save_image = True
-        if "savevideo" in cls or "createvideo" in cls:
+        if "savevideo" in cls or "createvideo" in cls or "videocombine" in cls:
             has_save_video = True
 
     kind = "unknown"
@@ -366,4 +366,3 @@ def detect_capabilities(prompt: Dict[str, Any]) -> WorkflowCapabilities:
         has_save_image=has_save_image,
         has_save_video=has_save_video,
     )
-
