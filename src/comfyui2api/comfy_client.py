@@ -75,6 +75,8 @@ class ComfyUIClient:
         self.base_url = base_url.rstrip("/")
         self._timeout = httpx.Timeout(timeout=http_timeout_s)
         self._client = httpx.AsyncClient(timeout=self._timeout, trust_env=_should_trust_env(self.base_url))
+        self._object_info_lock = asyncio.Lock()
+        self._object_info_cache: Optional[Dict[str, Any]] = None
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -96,6 +98,22 @@ class ComfyUIClient:
         except httpx.HTTPStatusError as e:
             raise ComfyApiError(_format_http_error("/queue", e)) from e
         return r.json()
+
+    async def object_info(self, *, force: bool = False) -> Dict[str, Any]:
+        async with self._object_info_lock:
+            if self._object_info_cache is not None and not force:
+                return self._object_info_cache
+            url = _join(self.base_url, "/object_info")
+            r = await self._client.get(url, headers={"Accept": "application/json"})
+            try:
+                r.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                raise ComfyApiError(_format_http_error("/object_info", e)) from e
+            payload = r.json()
+            if not isinstance(payload, dict):
+                raise ComfyApiError(f"Unexpected /object_info response type: {type(payload).__name__}")
+            self._object_info_cache = payload
+            return payload
 
     async def queue_prompt(
         self,

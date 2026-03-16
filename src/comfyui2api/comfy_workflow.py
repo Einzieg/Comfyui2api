@@ -10,6 +10,35 @@ class WorkflowFormatError(ValueError):
     pass
 
 
+def _input_schema_map(schema: Dict[str, Any]) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
+    inputs = schema.get("input")
+    if not isinstance(inputs, dict):
+        return out
+    for section in ("required", "optional"):
+        block = inputs.get(section)
+        if not isinstance(block, dict):
+            continue
+        for key, value in block.items():
+            if isinstance(key, str):
+                out[key] = value
+    return out
+
+
+def _allowed_enum_values(spec: Any) -> Optional[set[str]]:
+    if not isinstance(spec, list) or not spec:
+        return None
+    first = spec[0]
+    if not isinstance(first, list):
+        return None
+    values = {item for item in first if isinstance(item, str)}
+    return values or None
+
+
+def _basename_like(value: str) -> str:
+    return str(value or "").replace("\\", "/").rsplit("/", 1)[-1]
+
+
 def read_json(path: Path) -> Any:
     try:
         text = path.read_text(encoding="utf-8")
@@ -250,6 +279,81 @@ def apply_overrides(prompt: Dict[str, Any], overrides: List[Tuple[str, str, Any]
             node["inputs"] = {}
             inputs = node["inputs"]
         inputs[str(input_key)] = value
+
+
+def normalize_prompt_enum_inputs(
+    prompt: Dict[str, Any],
+    *,
+    object_info: Dict[str, Any],
+) -> List[Tuple[str, str, str, str]]:
+    changes: List[Tuple[str, str, str, str]] = []
+    for node_id, node in prompt.items():
+        if not isinstance(node_id, str) or not isinstance(node, dict):
+            continue
+        cls = as_str(node.get("class_type"))
+        if not cls:
+            continue
+        schema = object_info.get(cls)
+        if not isinstance(schema, dict):
+            continue
+        input_map = _input_schema_map(schema)
+        if not input_map:
+            continue
+        inputs = node.get("inputs")
+        if not isinstance(inputs, dict):
+            continue
+        for input_key, current_value in list(inputs.items()):
+            if not isinstance(input_key, str) or not isinstance(current_value, str):
+                continue
+            spec = input_map.get(input_key)
+            allowed = _allowed_enum_values(spec)
+            if not allowed or current_value in allowed:
+                continue
+            normalized = _basename_like(current_value)
+            if normalized and normalized in allowed and normalized != current_value:
+                inputs[input_key] = normalized
+                changes.append((node_id, input_key, current_value, normalized))
+    return changes
+
+
+def prune_invalid_orphan_output_nodes(
+    prompt: Dict[str, Any],
+    *,
+    object_info: Dict[str, Any],
+) -> List[str]:
+    consumers: Dict[str, List[Tuple[str, str]]] = {}
+    for source_id, node in prompt.items():
+        if not isinstance(source_id, str) or not isinstance(node, dict):
+            continue
+        inputs = node.get("inputs")
+        if not isinstance(inputs, dict):
+            continue
+        for input_key, value in inputs.items():
+            if isinstance(value, list) and value and isinstance(value[0], str):
+                consumers.setdefault(value[0], []).append((source_id, str(input_key)))
+
+    removed: List[str] = []
+    for node_id, node in list(prompt.items()):
+        if consumers.get(node_id):
+            continue
+        if not isinstance(node, dict):
+            continue
+        cls = as_str(node.get("class_type"))
+        schema = object_info.get(cls)
+        if not isinstance(schema, dict) or not schema.get("output_node"):
+            continue
+        input_map = _input_schema_map(schema)
+        required_inputs = schema.get("input", {}).get("required", {}) if isinstance(schema.get("input"), dict) else {}
+        if not isinstance(required_inputs, dict):
+            continue
+        node_inputs = node.get("inputs")
+        if not isinstance(node_inputs, dict):
+            node_inputs = {}
+        missing_required = [key for key in required_inputs.keys() if key not in node_inputs]
+        if missing_required:
+            prompt.pop(node_id, None)
+            removed.append(node_id)
+    return removed
 
 
 def prepare_prompt(

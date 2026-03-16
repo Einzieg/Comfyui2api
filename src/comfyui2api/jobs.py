@@ -9,7 +9,12 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from .comfy_client import ComfyApiError, ComfyUIClient
-from .comfy_workflow import iter_file_outputs, prepare_prompt
+from .comfy_workflow import (
+    iter_file_outputs,
+    normalize_prompt_enum_inputs,
+    prepare_prompt,
+    prune_invalid_orphan_output_nodes,
+)
 from .config import Config
 from .util import guess_media_type, json_dumps, pick_primary_url, sanitize_filename_part, utc_now_iso, utc_now_unix
 from .workflow_params import resolve_standard_overrides
@@ -267,6 +272,16 @@ class JobManager:
             )
             + list(job.overrides or []),
         )
+        object_info = await self.comfy.object_info()
+        removed_nodes = prune_invalid_orphan_output_nodes(prompt_graph, object_info=object_info)
+        normalized_inputs = normalize_prompt_enum_inputs(prompt_graph, object_info=object_info)
+        if removed_nodes or normalized_inputs:
+            logger.info(
+                "sanitized prompt graph: job_id=%s removed_nodes=%s normalized_inputs=%s",
+                job_id,
+                removed_nodes,
+                normalized_inputs,
+            )
 
         qp = await self.comfy.queue_prompt(prompt=prompt_graph, client_id=client_id, extra_data=extra_data)
         await self._update(job_id, prompt_id=qp.prompt_id, queue_number=qp.number)
