@@ -340,9 +340,36 @@ def create_app() -> FastAPI:
                     "name": wf.name,
                     "kind": wf.capabilities.kind,
                     "mtime_ns": wf.mtime_ns,
+                    "available": True,
+                    "load_error": None,
+                    "parameter_error": wf.parameter_error,
                 }
             )
+        for load_error in await registry.list_load_errors():
+            items.append(
+                {
+                    "name": load_error.name,
+                    "kind": None,
+                    "mtime_ns": load_error.mtime_ns,
+                    "available": False,
+                    "load_error": load_error.error,
+                    "parameter_error": None,
+                }
+            )
+        items.sort(key=lambda item: str(item.get("name") or "").lower())
         return {"workflows_dir": str(cfg.workflows_dir), "items": items}
+
+    async def _find_workflow_load_error(name: str):
+        requested = (name or "").strip()
+        if not requested:
+            return None
+        item = await registry.get_load_error(requested)
+        if item:
+            return item
+        for load_error in await registry.list_load_errors():
+            if load_error.name.lower() == requested.lower():
+                return load_error
+        return None
 
     async def _resolve_workflow_name(name: str):
         requested = (name or "").strip()
@@ -364,6 +391,19 @@ def create_app() -> FastAPI:
             for item in await registry.list():
                 if item.name.lower() == maybe.lower():
                     return item
+            load_error = await _find_workflow_load_error(maybe)
+            if load_error:
+                raise _openai_error(
+                    f"Workflow '{load_error.name}' failed to load: {load_error.error}",
+                    http_status=400,
+                )
+
+        load_error = await _find_workflow_load_error(requested)
+        if load_error:
+            raise _openai_error(
+                f"Workflow '{load_error.name}' failed to load: {load_error.error}",
+                http_status=400,
+            )
 
         raise _openai_error("Workflow not found", http_status=404)
 
