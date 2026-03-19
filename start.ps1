@@ -50,10 +50,7 @@ function Import-EnvFile([string]$Path) {
             }
         }
 
-        $current = [Environment]::GetEnvironmentVariable($name, "Process")
-        if ([string]::IsNullOrWhiteSpace($current)) {
-            [Environment]::SetEnvironmentVariable($name, $value, "Process")
-        }
+        [Environment]::SetEnvironmentVariable($name, $value, "Process")
     }
 }
 
