@@ -10,6 +10,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
+from urllib.parse import parse_qs, urlparse
 
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
@@ -280,7 +281,7 @@ class AppSmokeTests(unittest.TestCase):
         kwargs = mock_create_job.await_args.kwargs
         self.assertEqual(kwargs["workflow"], self.hybrid_video_workflow_name)
 
-    def test_videos_get_returns_content_url_with_api_key_query(self) -> None:
+    def test_videos_get_returns_signed_content_url(self) -> None:
         from comfyui2api.jobs import Job, JobOutput
 
         done = asyncio.Event()
@@ -313,10 +314,11 @@ class AppSmokeTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertEqual(
-            payload["url"],
-            "http://testserver/v1/videos/video_job-video-content/content?api_key=secret-token",
-        )
+        parsed = urlparse(payload["url"])
+        params = parse_qs(parsed.query)
+        self.assertEqual(parsed.path, "/v1/videos/video_job-video-content/content")
+        self.assertIn("exp", params)
+        self.assertIn("sig", params)
 
     def test_videos_content_accepts_query_api_key(self) -> None:
         from comfyui2api.jobs import Job, JobOutput
@@ -454,6 +456,52 @@ class AppSmokeTests(unittest.TestCase):
 
 
 class JobManagerErrorHandlingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_run_job_uses_workflow_default_prompt_and_image_nodes(self) -> None:
+        import comfyui2api.jobs as jobs_module
+        from comfyui2api.workflow_params import WorkflowParameterSpec
+
+        manager = jobs_module.JobManager(
+            cfg=SimpleNamespace(worker_concurrency=1, runs_dir=Path(".")),
+            registry=SimpleNamespace(),
+            comfy=SimpleNamespace(
+                object_info=AsyncMock(return_value={}),
+                queue_prompt=AsyncMock(side_effect=RuntimeError("stop")),
+            ),
+        )
+
+        spec = WorkflowParameterSpec(
+            version=1,
+            kind="img2video",
+            parameters={},
+            path=Path("hybrid.params.json"),
+            prompt_node="339.custom_prompt",
+            image_node="167.image",
+        )
+        workflow = SimpleNamespace(
+            name="hybrid.json",
+            parameter_spec=spec,
+            clone_obj=lambda: {"prompt": {"167": {"class_type": "LoadImage", "inputs": {"image": "input.png"}}}},
+        )
+
+        job = await manager.create_job(
+            kind="img2video",
+            workflow="hybrid.json",
+            prompt="hello",
+            image="comfyui2api/input.png",
+        )
+
+        with patch.object(manager, "_resolve_workflow", AsyncMock(return_value=workflow)), patch.object(
+            jobs_module, "prepare_prompt", return_value=({}, None, [], {})
+        ) as mock_prepare:
+            with self.assertRaises(RuntimeError) as ctx:
+                await manager._run_job(job.job_id)
+
+        self.assertEqual(str(ctx.exception), "stop")
+        kwargs = mock_prepare.call_args.kwargs
+        self.assertEqual(kwargs["positive_prompt_node"], "339.custom_prompt")
+        self.assertEqual(kwargs["image_node"], "167.image")
+        self.assertIsNone(kwargs["negative_prompt_node"])
+
     async def test_worker_logs_traceback_and_records_exception_type(self) -> None:
         import comfyui2api.jobs as jobs_module
 

@@ -1,0 +1,1124 @@
+{
+  "107": {
+    "inputs": {
+      "frame_rate": [
+        "285",
+        0
+      ],
+      "positive": [
+        "121",
+        0
+      ],
+      "negative": [
+        "110",
+        0
+      ]
+    },
+    "class_type": "LTXVConditioning",
+    "_meta": {
+      "title": "LTXV条件"
+    }
+  },
+  "108": {
+    "inputs": {
+      "width": [
+        "163",
+        0
+      ],
+      "height": [
+        "163",
+        1
+      ],
+      "length": [
+        "287",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyLTXVLatentVideo",
+    "_meta": {
+      "title": "空Latent视频（LTXV）"
+    }
+  },
+  "109": {
+    "inputs": {
+      "video_latent": [
+        "161",
+        0
+      ],
+      "audio_latent": [
+        "199",
+        0
+      ]
+    },
+    "class_type": "LTXVConcatAVLatent",
+    "_meta": {
+      "title": "LTXVConcatAVLatent"
+    }
+  },
+  "110": {
+    "inputs": {
+      "text": "vivid tones, overexposed, static, details unclear, subtitles, style, work, painting, picture, still, overall grayish, poorest quality, low quality, JPEG compression artifacts, ugly, incomplete, extra fingers, poorly drawn hands, poorly drawn faces, deformed, disfigured, malformed limbs, fused fingers, still image, messy background, three legs, many people in the background, walking backwards, AI skin, Oily skin, reflective skin, strained expression, contorted expression, blurry, oversaturated, pixelated, low resolution, grainy, distorted, noise, compression artifacts, jpeg artifacts, glitches, watermark, text, logo, signature, copyright, distorted sound, saturated sound, loud, lowres, worst quality, normal quality, bad anatomy, mutated, extra limbs, missing limbs, extra digits, username, out of frame, cropped, gross proportions, underexposed, noisy, static frame, unstable motion, flickering, nsfw, out of focus, low contrast, washed out colors, excessive noise, grainy texture, poor lighting, motion blur, distorted proportions, unnatural skin tones, deformed facial features, asymmetrical face, missing facial features, disfigured hands, wrong hand count, artifacts around text, unreadable text on shirt or hat, incorrect lettering on cap(\"PNTR\"), incorrect t-shirt slogan (\"JUST DO IT\"), missing microphone, misplaced microphone, inconsistent perspective, camera shake, incorrect depth of field, background too sharp, background clutter, distracting reflections, harsh shadows, inconsistent lighting direction, color banding, cartoonish rendering, 3D CGI look, unrealistic materials, uncanny valley effect, incorrect ethnicity, wrong gender, exaggerated expressions, smiling, laughing, exaggerated sadness, wrong gaze direction, eyes looking at camera, mismatched lip sync, silent or muted audio, distorted voice, robotic voice, echo, background noise, off-sync audio, missing sniff sounds, incorrect dialogue, added dialogue, repetitive speech, jittery movement, awkward pauses, incorrect timing, unnatural transitions, inconsistent framing, tilted camera, missing door or shelves, missing shallow depth of field, flat lighting, inconsistent tone, cinematic oversaturation, stylized filters, AI artifacts",
+      "clip": [
+        "190",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP文本编码"
+    }
+  },
+  "116": {
+    "inputs": {
+      "av_latent": [
+        "348",
+        0
+      ]
+    },
+    "class_type": "LTXVSeparateAVLatent",
+    "_meta": {
+      "title": "LTXV分离音视频潜空间"
+    }
+  },
+  "117": {
+    "inputs": {
+      "video_latent": [
+        "160",
+        0
+      ],
+      "audio_latent": [
+        "116",
+        1
+      ]
+    },
+    "class_type": "LTXVConcatAVLatent",
+    "_meta": {
+      "title": "LTXVConcatAVLatent"
+    }
+  },
+  "118": {
+    "inputs": {
+      "samples": [
+        "116",
+        0
+      ],
+      "upscale_model": [
+        "189",
+        0
+      ],
+      "vae": [
+        "184",
+        0
+      ]
+    },
+    "class_type": "LTXVLatentUpsampler",
+    "_meta": {
+      "title": "spatial"
+    }
+  },
+  "121": {
+    "inputs": {
+      "text": [
+        "334",
+        0
+      ],
+      "clip": [
+        "190",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP文本编码"
+    }
+  },
+  "125": {
+    "inputs": {
+      "av_latent": [
+        "349",
+        0
+      ]
+    },
+    "class_type": "LTXVSeparateAVLatent",
+    "_meta": {
+      "title": "LTXV分离音视频潜空间"
+    }
+  },
+  "127": {
+    "inputs": {
+      "tile_size": 512,
+      "overlap": 64,
+      "temporal_size": 4096,
+      "temporal_overlap": 8,
+      "samples": [
+        "125",
+        0
+      ],
+      "vae": [
+        "184",
+        0
+      ]
+    },
+    "class_type": "VAEDecodeTiled",
+    "_meta": {
+      "title": "VAE解码（分块）"
+    }
+  },
+  "134": {
+    "inputs": {
+      "lora_name": "ltx-2.3-22b-distilled-lora-384.safetensors",
+      "strength_model": 0.6,
+      "model": [
+        "329",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "Distill Lora (ONLY if you use DEV model)"
+    }
+  },
+  "137": {
+    "inputs": {
+      "sampler_name": "euler_ancestral_cfg_pp"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "K采样器选择"
+    }
+  },
+  "138": {
+    "inputs": {
+      "sampler_name": "euler_cfg_pp"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "K采样器选择"
+    }
+  },
+  "140": {
+    "inputs": {
+      "frame_rate": [
+        "285",
+        0
+      ],
+      "loop_count": 0,
+      "filename_prefix": "2026-03-18/20260318_194624_LTX",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true,
+      "images": [
+        "127",
+        0
+      ],
+      "audio": [
+        "201",
+        0
+      ]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "160": {
+    "inputs": {
+      "strength": 1,
+      "bypass": [
+        "290",
+        0
+      ],
+      "vae": [
+        "184",
+        0
+      ],
+      "image": [
+        "246",
+        0
+      ],
+      "latent": [
+        "118",
+        0
+      ]
+    },
+    "class_type": "LTXVImgToVideoInplace",
+    "_meta": {
+      "title": "LTXV图像转视频（原地）"
+    }
+  },
+  "161": {
+    "inputs": {
+      "strength": 1,
+      "bypass": [
+        "290",
+        0
+      ],
+      "vae": [
+        "184",
+        0
+      ],
+      "image": [
+        "162",
+        0
+      ],
+      "latent": [
+        "108",
+        0
+      ]
+    },
+    "class_type": "LTXVImgToVideoInplace",
+    "_meta": {
+      "title": "LTXV图像转视频（原地）"
+    }
+  },
+  "162": {
+    "inputs": {
+      "img_compression": 18,
+      "image": [
+        "246",
+        0
+      ]
+    },
+    "class_type": "LTXVPreprocess",
+    "_meta": {
+      "title": "LTXV预处理"
+    }
+  },
+  "163": {
+    "inputs": {
+      "image": [
+        "164",
+        0
+      ]
+    },
+    "class_type": "GetImageSize",
+    "_meta": {
+      "title": "获取图像尺寸"
+    }
+  },
+  "164": {
+    "inputs": {
+      "resize_type": "scale by multiplier",
+      "resize_type.multiplier": 0.5,
+      "scale_method": "area",
+      "input": [
+        "165",
+        0
+      ]
+    },
+    "class_type": "ResizeImageMaskNode",
+    "_meta": {
+      "title": "调整图像/掩码大小"
+    }
+  },
+  "165": {
+    "inputs": {
+      "width": [
+        "292",
+        0
+      ],
+      "height": [
+        "293",
+        0
+      ],
+      "upscale_method": "nearest-exact",
+      "keep_proportion": "crop",
+      "pad_color": "0, 0, 0",
+      "crop_position": "center",
+      "divisible_by": 32,
+      "device": "cpu",
+      "image": [
+        "167",
+        0
+      ]
+    },
+    "class_type": "ImageResizeKJv2",
+    "_meta": {
+      "title": "Resize Image v2"
+    }
+  },
+  "167": {
+    "inputs": {
+      "image": "shot_1_take_1_1773771416983.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "184": {
+    "inputs": {
+      "vae_name": "LTX23_video_vae_bf16.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE (video VAE)"
+    }
+  },
+  "189": {
+    "inputs": {
+      "model_name": "ltx-2.3-spatial-upscaler-x2-1.0.safetensors"
+    },
+    "class_type": "LatentUpscaleModelLoader",
+    "_meta": {
+      "title": "加载Latent放大模型"
+    }
+  },
+  "190": {
+    "inputs": {
+      "clip_name1": "gemma_3_12B_it_fp8_e4m3fn.safetensors",
+      "clip_name2": "ltx-2.3_text_projection_bf16.safetensors",
+      "type": "ltxv",
+      "device": "default"
+    },
+    "class_type": "DualCLIPLoader",
+    "_meta": {
+      "title": "CLIPLoader (Gemma + LTX Embeddings)"
+    }
+  },
+  "196": {
+    "inputs": {
+      "vae_name": "LTX23_audio_vae_bf16.safetensors",
+      "device": "main_device",
+      "weight_dtype": "bf16"
+    },
+    "class_type": "VAELoaderKJ",
+    "_meta": {
+      "title": "VAELoader KJ (audio VAE)"
+    }
+  },
+  "199": {
+    "inputs": {
+      "frames_number": [
+        "287",
+        1
+      ],
+      "frame_rate": [
+        "311",
+        1
+      ],
+      "batch_size": 1,
+      "audio_vae": [
+        "196",
+        0
+      ]
+    },
+    "class_type": "LTXVEmptyLatentAudio",
+    "_meta": {
+      "title": "LTXV 空音频潜空间"
+    }
+  },
+  "201": {
+    "inputs": {
+      "samples": [
+        "125",
+        1
+      ],
+      "audio_vae": [
+        "196",
+        0
+      ]
+    },
+    "class_type": "LTXVAudioVAEDecode",
+    "_meta": {
+      "title": "LTXV音频VAE解码"
+    }
+  },
+  "246": {
+    "inputs": {
+      "longer_edge": 1536,
+      "images": [
+        "165",
+        0
+      ]
+    },
+    "class_type": "ResizeImagesByLongerEdge",
+    "_meta": {
+      "title": "缩放图像（长边）"
+    }
+  },
+  "285": {
+    "inputs": {
+      "value": 24
+    },
+    "class_type": "PrimitiveFloat",
+    "_meta": {
+      "title": "FPS"
+    }
+  },
+  "287": {
+    "inputs": {
+      "expression": "1+ 8*(round(a*b)/8)",
+      "a": [
+        "291",
+        0
+      ],
+      "b": [
+        "285",
+        0
+      ]
+    },
+    "class_type": "SimpleCalculatorKJ",
+    "_meta": {
+      "title": "SimpleCalculatorKJ"
+    }
+  },
+  "290": {
+    "inputs": {
+      "value": false
+    },
+    "class_type": "PrimitiveBoolean",
+    "_meta": {
+      "title": "Text To Video (no image ref)"
+    }
+  },
+  "291": {
+    "inputs": {
+      "value": 10
+    },
+    "class_type": "INTConstant",
+    "_meta": {
+      "title": "LENGTH (in seconds)"
+    }
+  },
+  "292": {
+    "inputs": {
+      "value": 1280
+    },
+    "class_type": "INTConstant",
+    "_meta": {
+      "title": "WIDTH"
+    }
+  },
+  "293": {
+    "inputs": {
+      "value": 720
+    },
+    "class_type": "INTConstant",
+    "_meta": {
+      "title": "HEIGHT"
+    }
+  },
+  "311": {
+    "inputs": {
+      "expression": "a",
+      "variables.a": [
+        "285",
+        0
+      ]
+    },
+    "class_type": "SimpleCalculatorKJ",
+    "_meta": {
+      "title": "SimpleCalculatorKJ"
+    }
+  },
+  "329": {
+    "inputs": {
+      "unet_name": "ltx-2.3-22b-dev_transformer_only_fp8_scaled.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "UNet加载器"
+    }
+  },
+  "330": {
+    "inputs": {
+      "max_tokens": 4096,
+      "top_k": 30,
+      "top_p": 0.9,
+      "min_p": 0.04,
+      "typical_p": 1,
+      "temperature": 0.8,
+      "repeat_penalty": 1,
+      "frequency_penalty": 0,
+      "presence_penalty": 1,
+      "mirostat_mode": 0,
+      "mirostat_eta": 0.1,
+      "mirostat_tau": 5,
+      "state_uid": -1
+    },
+    "class_type": "llama_cpp_parameters",
+    "_meta": {
+      "title": "Llama-cpp Parameters"
+    }
+  },
+  "333": {
+    "inputs": {
+      "offload_model": false,
+      "offload_cache": true,
+      "anything": [
+        "336",
+        0
+      ]
+    },
+    "class_type": "VRAMCleanup",
+    "_meta": {
+      "title": "释放显存"
+    }
+  },
+  "334": {
+    "inputs": {
+      "text_0": "Starting from the provided aerial view of an abandoned industrial zone with a grey cement meteorological station at the center, the scene activates with a slow, smooth camera tilt downward. Shen Yuan, a small figure in a dark grey work jacket, begins walking steadily from the bottom-left corner towards the center, his spine slightly tensed and gaze fixed on the station ahead. As he moves with uniform steps, the wind causes the waist-high green-grey wild grass to gently sway and lean in a single direction. Simultaneously, high-altitude clouds drift slowly, casting fragmented golden sunlight through sparse grey clouds; these shifting cloud shadows cause the irregular light and dark patches on the ground to migrate across the terrain. By the end of the sequence, the cloud shadows sweep across Shen Yuan's body, leaving him half in sunlight and half in shadow as he approaches within 10 meters of the control room. The visual style maintains a cold grey tone with deep depth of field, emphasizing desolation and solitude. The audio consists of a moaning wind mixed with the rustling friction of wind-swept wild grass, with no dialogue.",
+      "text": [
+        "336",
+        0
+      ]
+    },
+    "class_type": "ShowText|pysssss",
+    "_meta": {
+      "title": "展示文本"
+    }
+  },
+  "336": {
+    "inputs": {
+      "any": [
+        "339",
+        0
+      ]
+    },
+    "class_type": "llama_cpp_unload_model",
+    "_meta": {
+      "title": "Llama-cpp Unload Model"
+    }
+  },
+  "337": {
+    "inputs": {
+      "model": "Huihui-Qwen3.5-27B-abliterated.Q4_K_S.gguf",
+      "mmproj": "Huihui-Qwen3.5-27B-abliterated.mmproj-Q8_0.gguf",
+      "chat_handler": "Qwen3.5",
+      "n_ctx": 4096,
+      "vram_limit": -1,
+      "image_min_tokens": 0,
+      "image_max_tokens": 0
+    },
+    "class_type": "llama_cpp_model_loader",
+    "_meta": {
+      "title": "Llama-cpp Model Loader"
+    }
+  },
+  "338": {
+    "inputs": {
+      "text": "## Context\n你是一位精通 ComfyUI 和 LTX-2 模型的图生视频提示词工程师。你的任务是根据用户提供的【参考图描述】和【故事情节描述】，生成专用于 LTX-2 I2V模式的详细的自然语言的英文提示词，对话内容按输入文字直接显示，不要翻译对话内容。特别注意：只输出生成的提示词，除了提示词不要输出其他解释或回答内容。\n\n## LTX-2 I2V 编写核心原则（至关重要）\n1.  **动作优先**：在I2V模式下，已经通过 Image 节点输入了图像，因此提示词**不要**把重点放在重复描述静态外貌上，而要**百分之百集中在描述动作、变化和镜头的演进上**。\n2.  **继承与激活**：你要把静态图片看作是视频的\"第 1 帧\"，提示词的作用是\"激活\"这个初始状态，让它动起来。\n3.  **细节描写**：必须描述动作带来的物理细节变化（如：皱纹、毛发飘动、光影折射、灰尘漂浮）。\n4.  **镜头语言**：必须指定相机的运动方式。\n5.  **对话语言**：输入的对话语言禁止翻译成英文，如果输入的对话为中文，那么就直接以中文原文输出，禁止翻译，禁止修改。\n\n## 工作流程\n1.  **分析输入**：\n    -   【参考图描述】（决定主角是谁，在哪里，初始状态）。\n    -   【故事情节描述】（决定接下来要发生什么动作）。\n2.  **合成提示词**：\n    -   以最快的速度确认主体（例如: Starting from the [Subject] shown in image...）。\n    -   详细描述故事情节中的动作，动作要平滑、自然。。\n3.  **视频概念描述**：\n    -   参考下方视频概念描述规范对视频之后的人物动作、运镜、环境变化进行全方位的详细概念描述，但不用描写画面的起始信息，仅描写接下来发生的后续内容。\n\n视频概念描述规范：\n1、视频美学控制\n    光线类型：柔光、硬光、顶光、侧光、背光、底光、边缘光、剪影、低对比度、高对比度\n    时间段：白天、夜晚、黄昏、日落、黎明、日出\n    景别：特写、近景、中景、中近景、中全景、全景、广角\n    构图：中心构图、平衡构图、右 / 左侧重构图、对称构图、短边构图\n    镜头\n    镜头焦段：中焦距、广角、长焦、望远、超广角\n    机位角度：过肩角度、高角度、低角度、倾斜角度、航拍、俯视角度\n    镜头类型：干净的单人镜头、双人镜头、三人镜头、群像镜头、定场镜头\n    色调：暖色调、冷色调、高饱和度、低饱和度\n\n2、动态控制\n    运动：街舞、跑步、滑滑板、踢足球、网球、乒乓球、滑雪、篮球、橄榄球、顶碗舞、侧手翻\n    人物情绪：愤怒、恐惧、高兴、悲伤、惊讶\n    基础运镜：镜头推进、镜头拉远、镜头向右移动、镜头向左移动、镜头上摇\n    高级运镜：手持镜头、复合运镜、跟随镜头、环绕运镜\n\n3、风格化表现\n    视觉风格：毛毡风格、木偶动画、二次元、黑白动画、移轴摄影\n    特效镜头：无具体明细（可根据创作需求自定义描述）\n\n4、视频声音生成\n    人声：说话内容 + 情绪 + 语调 + 语速 + 音色 + 口音\n    音效：音源材质 + 行为 + 环境音\n    环境音：作为音效组成部分，随场景自定义（如室内安静、户外嘈杂、雨声等）\n    背景音乐：配乐 + 风格（如悬疑风格、治愈风格、国风等）\n\n## 现在请接收户的输入，开始生成 LTX-2 I2V 提示词。"
+    },
+    "class_type": "TextInput_",
+    "_meta": {
+      "title": "文本"
+    }
+  },
+  "339": {
+    "inputs": {
+      "preset_prompt": "Empty - Nothing",
+      "custom_prompt": "",
+      "system_prompt": [
+        "382",
+        0
+      ],
+      "inference_mode": "one by one",
+      "max_frames": 24,
+      "max_size": 256,
+      "seed": 999,
+      "force_offload": false,
+      "save_states": false,
+      "llama_model": [
+        "337",
+        0
+      ],
+      "parameters": [
+        "330",
+        0
+      ]
+    },
+    "class_type": "llama_cpp_instruct_adv",
+    "_meta": {
+      "title": "Llama-cpp Instruct"
+    }
+  },
+  "348": {
+    "inputs": {
+      "add_noise": true,
+      "noise_seed": [
+        "364",
+        0
+      ],
+      "cfg": 1,
+      "model": [
+        "352",
+        0
+      ],
+      "positive": [
+        "107",
+        0
+      ],
+      "negative": [
+        "107",
+        1
+      ],
+      "sampler": [
+        "137",
+        0
+      ],
+      "sigmas": [
+        "402",
+        0
+      ],
+      "latent_image": [
+        "109",
+        0
+      ]
+    },
+    "class_type": "SamplerCustom",
+    "_meta": {
+      "title": "自定义采样器"
+    }
+  },
+  "349": {
+    "inputs": {
+      "add_noise": true,
+      "noise_seed": [
+        "364",
+        0
+      ],
+      "cfg": 1,
+      "model": [
+        "351",
+        0
+      ],
+      "positive": [
+        "107",
+        0
+      ],
+      "negative": [
+        "107",
+        1
+      ],
+      "sampler": [
+        "138",
+        0
+      ],
+      "sigmas": [
+        "401",
+        0
+      ],
+      "latent_image": [
+        "117",
+        0
+      ]
+    },
+    "class_type": "SamplerCustom",
+    "_meta": {
+      "title": "自定义采样器"
+    }
+  },
+  "351": {
+    "inputs": {
+      "preview_rate": 8,
+      "model": [
+        "391",
+        0
+      ]
+    },
+    "class_type": "LTX2SamplingPreviewOverride",
+    "_meta": {
+      "title": "LTX2 Sampling Preview Override"
+    }
+  },
+  "352": {
+    "inputs": {
+      "preview_rate": 8,
+      "model": [
+        "391",
+        0
+      ]
+    },
+    "class_type": "LTX2SamplingPreviewOverride",
+    "_meta": {
+      "title": "LTX2 Sampling Preview Override"
+    }
+  },
+  "364": {
+    "inputs": {
+      "seed": -1
+    },
+    "class_type": "Seed (rgthree)",
+    "_meta": {
+      "title": "Seed (rgthree)"
+    }
+  },
+  "367": {
+    "inputs": {
+      "sage_attention": "auto",
+      "allow_compile": false,
+      "model": [
+        "134",
+        0
+      ]
+    },
+    "class_type": "PathchSageAttentionKJ",
+    "_meta": {
+      "title": "SAGE注意力补丁KJ"
+    }
+  },
+  "368": {
+    "inputs": {
+      "chunks": 4,
+      "dim_threshold": 4096,
+      "model": [
+        "367",
+        0
+      ]
+    },
+    "class_type": "LTXVChunkFeedForward",
+    "_meta": {
+      "title": "LTXV Chunk FeedForward"
+    }
+  },
+  "370": {
+    "inputs": {
+      "frame_rate": 24,
+      "loop_count": 0,
+      "filename_prefix": "2026-03-18/20260318_194624_LTX",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "371": {
+    "inputs": {
+      "frame_rate": 24,
+      "loop_count": 0,
+      "filename_prefix": "2026-03-18/20260318_194624_LTX",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "372": {
+    "inputs": {
+      "frame_rate": 24,
+      "loop_count": 0,
+      "filename_prefix": "2026-03-18/20260318_194624_LTX",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "373": {
+    "inputs": {
+      "frame_rate": 24,
+      "loop_count": 0,
+      "filename_prefix": "2026-03-18/20260318_194624_LTX",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "374": {
+    "inputs": {
+      "frame_rate": 24,
+      "loop_count": 0,
+      "filename_prefix": "2026-03-18/20260318_194624_LTX",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "375": {
+    "inputs": {
+      "frame_rate": 24,
+      "loop_count": 0,
+      "filename_prefix": "2026-03-18/20260318_194624_LTX",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "376": {
+    "inputs": {
+      "frame_rate": 24,
+      "loop_count": 0,
+      "filename_prefix": "2026-03-18/20260318_194624_LTX",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "377": {
+    "inputs": {
+      "frame_rate": 24,
+      "loop_count": 0,
+      "filename_prefix": "2026-03-18/20260318_194624_LTX",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "378": {
+    "inputs": {
+      "frame_rate": 24,
+      "loop_count": 0,
+      "filename_prefix": "2026-03-18/20260318_194624_LTX",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "379": {
+    "inputs": {
+      "frame_rate": 24,
+      "loop_count": 0,
+      "filename_prefix": "2026-03-18/20260318_194624_LTX",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "382": {
+    "inputs": {
+      "delimiter": "",
+      "string1": [
+        "338",
+        0
+      ]
+    },
+    "class_type": "JoinStrings",
+    "_meta": {
+      "title": "合并字符串"
+    }
+  },
+  "384": {
+    "inputs": {
+      "frame_rate": 24,
+      "loop_count": 0,
+      "filename_prefix": "2026-03-18/20260318_194624_LTX",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "385": {
+    "inputs": {
+      "frame_rate": 24,
+      "loop_count": 0,
+      "filename_prefix": "2026-03-18/20260318_194624_LTX",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "391": {
+    "inputs": {
+      "nag_scale": 11,
+      "nag_alpha": 0.25,
+      "nag_tau": 2.5,
+      "inplace": true,
+      "model": [
+        "368",
+        0
+      ],
+      "nag_cond_video": [
+        "107",
+        1
+      ],
+      "nag_cond_audio": [
+        "107",
+        1
+      ]
+    },
+    "class_type": "LTX2_NAG",
+    "_meta": {
+      "title": "LTX2 NAG"
+    }
+  },
+  "392": {
+    "inputs": {
+      "frame_rate": 24,
+      "loop_count": 0,
+      "filename_prefix": "2026-03-18/20260318_194624_LTX",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "395": {
+    "inputs": {
+      "frame_rate": 24,
+      "loop_count": 0,
+      "filename_prefix": "2026-03-18/20260318_194624_LTX",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "396": {
+    "inputs": {
+      "frame_rate": 24,
+      "loop_count": 0,
+      "filename_prefix": "2026-03-18/20260318_194624_LTX",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "398": {
+    "inputs": {
+      "frame_rate": 24,
+      "loop_count": 0,
+      "filename_prefix": "2026-03-18/20260318_194624_LTX",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "401": {
+    "inputs": {
+      "sigmas": "0.85, 0.65, 0.42, 0.22, 0.08, 0.03, 0.0"
+    },
+    "class_type": "ManualSigmas",
+    "_meta": {
+      "title": "自定义Sigmas"
+    }
+  },
+  "402": {
+    "inputs": {
+      "sigmas": "1.0, 0.995, 0.990, 0.985, 0.980, 0.955, 0.880, 0.700, 0.420, 0.180, 0.0"
+    },
+    "class_type": "ManualSigmas",
+    "_meta": {
+      "title": "自定义Sigmas"
+    }
+  }
+}

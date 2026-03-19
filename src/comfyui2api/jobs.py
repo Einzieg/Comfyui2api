@@ -271,14 +271,19 @@ class JobManager:
             ),
         )
 
+        spec = wf.parameter_spec
+        positive_prompt_node = job.prompt_node or (spec.prompt_node if spec is not None else "") or None
+        negative_prompt_node = job.negative_prompt_node or (spec.negative_prompt_node if spec is not None else "") or None
+        image_node = job.image_node or (spec.image_node if spec is not None else "") or None
+
         prompt_graph, extra_data, applied, prompt_trace = prepare_prompt(
             workflow_obj=job_obj,
             positive_prompt=job.prompt or None,
             negative_prompt=job.negative_prompt or None,
-            positive_prompt_node=job.prompt_node or None,
-            negative_prompt_node=job.negative_prompt_node or None,
+            positive_prompt_node=positive_prompt_node,
+            negative_prompt_node=negative_prompt_node,
             image=job.image or None,
-            image_node=job.image_node or None,
+            image_node=image_node,
             overrides=resolve_standard_overrides(
                 workflow_obj=job_obj,
                 spec=wf.parameter_spec,

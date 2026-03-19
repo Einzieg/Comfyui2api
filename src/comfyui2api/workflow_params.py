@@ -56,6 +56,9 @@ class WorkflowParameterSpec:
     kind: str
     parameters: dict[str, WorkflowParameterDefinition]
     path: Path
+    prompt_node: str = ""
+    negative_prompt_node: str = ""
+    image_node: str = ""
 
 
 def parameter_sidecar_dir(workflows_dir: Path) -> Path:
@@ -238,7 +241,15 @@ def load_workflow_parameter_spec(
             normalize_parameter_value(definition, definition.default)
         parameters[param_name] = definition
 
-    return WorkflowParameterSpec(version=version, kind=kind, parameters=parameters, path=path.resolve())
+    return WorkflowParameterSpec(
+        version=version,
+        kind=kind,
+        parameters=parameters,
+        path=path.resolve(),
+        prompt_node=_normalize_string(obj.get("prompt_node")),
+        negative_prompt_node=_normalize_string(obj.get("negative_prompt_node")),
+        image_node=_normalize_string(obj.get("image_node")),
+    )
 
 
 def _ordered_parameter_names(parameter_names: Iterable[str]) -> list[str]:
@@ -857,7 +868,13 @@ def generate_parameter_template(
 
 def public_parameter_spec(spec: WorkflowParameterSpec | None) -> dict[str, Any]:
     if spec is None:
-        return {"version": 1, "kind": None, "path": None, "parameters": []}
+        return {
+            "version": 1,
+            "kind": None,
+            "path": None,
+            "input_targets": {"prompt_node": None, "negative_prompt_node": None, "image_node": None},
+            "parameters": [],
+        }
 
     items = []
     for name in _ordered_parameter_names(spec.parameters.keys()):
@@ -889,5 +906,10 @@ def public_parameter_spec(spec: WorkflowParameterSpec | None) -> dict[str, Any]:
         "version": spec.version,
         "kind": spec.kind,
         "path": str(spec.path),
+        "input_targets": {
+            "prompt_node": spec.prompt_node or None,
+            "negative_prompt_node": spec.negative_prompt_node or None,
+            "image_node": spec.image_node or None,
+        },
         "parameters": items,
     }

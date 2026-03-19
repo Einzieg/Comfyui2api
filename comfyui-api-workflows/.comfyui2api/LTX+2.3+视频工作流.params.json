@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "kind": "img2video",
+  "prompt_node": "339.custom_prompt",
+  "image_node": "167.image",
+  "parameters": {
+    "size": {
+      "type": "size",
+      "maps": [
+        {
+          "target": {
+            "ref": "292.value",
+            "selector": {
+              "class_type": "INTConstant",
+              "title": "WIDTH",
+              "input_key": "value"
+            }
+          },
+          "part": "width"
+        },
+        {
+          "target": {
+            "ref": "293.value",
+            "selector": {
+              "class_type": "INTConstant",
+              "title": "HEIGHT",
+              "input_key": "value"
+            }
+          },
+          "part": "height"
+        }
+      ]
+    },
+    "width": {
+      "type": "int",
+      "maps": [
+        {
+          "target": {
+            "ref": "292.value",
+            "selector": {
+              "class_type": "INTConstant",
+              "title": "WIDTH",
+              "input_key": "value"
+            }
+          }
+        }
+      ]
+    },
+    "height": {
+      "type": "int",
+      "maps": [
+        {
+          "target": {
+            "ref": "293.value",
+            "selector": {
+              "class_type": "INTConstant",
+              "title": "HEIGHT",
+              "input_key": "value"
+            }
+          }
+        }
+      ]
+    },
+    "fps": {
+      "type": "float",
+      "default": 24,
+      "minimum": 1,
+      "maps": [
+        {
+          "target": {
+            "ref": "285.value",
+            "selector": {
+              "class_type": "PrimitiveFloat",
+              "title": "FPS",
+              "input_key": "value"
+            }
+          }
+        }
+      ]
+    },
+    "duration": {
+      "type": "int",
+      "default": 10,
+      "minimum": 1,
+      "maps": [
+        {
+          "target": {
+            "ref": "291.value",
+            "selector": {
+              "class_type": "INTConstant",
+              "title": "LENGTH (in seconds)",
+              "input_key": "value"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

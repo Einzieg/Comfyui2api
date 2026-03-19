@@ -139,6 +139,50 @@ class WorkflowParameterMappingTests(unittest.TestCase):
             self.assertEqual(template["parameters"]["duration"]["maps"][0]["transform"], "seconds_to_frames")
             self.assertEqual(template["parameters"]["duration"]["maps"][0]["fps_param"], "fps")
 
+    def test_sidecar_mapping_loads_explicit_prompt_and_image_nodes(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            root = Path(tempdir)
+            workflows_dir = root / "workflows"
+            sidecar_dir = workflows_dir / ".comfyui2api"
+            workflows_dir.mkdir(parents=True, exist_ok=True)
+            sidecar_dir.mkdir(parents=True, exist_ok=True)
+
+            workflow_path = workflows_dir / "hybrid_flow.json"
+            workflow_obj = {
+                "prompt": {
+                    "1": {"class_type": "LoadImage", "inputs": {"image": "input.png"}},
+                    "2": {"class_type": "CustomPromptNode", "inputs": {"custom_prompt": "hello"}},
+                    "3": {"class_type": "SaveVideo", "inputs": {"filename_prefix": "sample"}},
+                }
+            }
+            workflow_path.write_text(json.dumps(workflow_obj, ensure_ascii=False), encoding="utf-8")
+
+            sidecar = {
+                "version": 1,
+                "kind": "img2video",
+                "prompt_node": "2.custom_prompt",
+                "image_node": "1.image",
+                "parameters": {
+                    "duration": {
+                        "type": "float",
+                        "maps": [{"target": "4.value"}],
+                    }
+                },
+            }
+            (sidecar_dir / "hybrid_flow.params.json").write_text(json.dumps(sidecar, ensure_ascii=False), encoding="utf-8")
+
+            spec = load_workflow_parameter_spec(
+                workflows_dir=workflows_dir,
+                workflow_path=workflow_path,
+                expected_kind="img2video",
+            )
+
+            self.assertIsNotNone(spec)
+            assert spec is not None
+            self.assertEqual(spec.prompt_node, "2.custom_prompt")
+            self.assertEqual(spec.image_node, "1.image")
+            self.assertEqual(spec.negative_prompt_node, "")
+
 
 if __name__ == "__main__":
     unittest.main()

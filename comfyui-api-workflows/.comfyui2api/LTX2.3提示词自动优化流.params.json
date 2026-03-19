@@ -1,0 +1,115 @@
+{
+  "version": 1,
+  "kind": "img2video",
+  "parameters": {
+    "size": {
+      "type": "size",
+      "maps": [
+        {
+          "target": {
+            "ref": "314.value",
+            "selector": {
+              "class_type": "PrimitiveInt",
+              "title": "Width",
+              "input_key": "value"
+            }
+          },
+          "part": "width"
+        },
+        {
+          "target": {
+            "ref": "299.value",
+            "selector": {
+              "class_type": "PrimitiveInt",
+              "title": "Height",
+              "input_key": "value"
+            }
+          },
+          "part": "height"
+        }
+      ]
+    },
+    "width": {
+      "type": "int",
+      "maps": [
+        {
+          "target": {
+            "ref": "314.value",
+            "selector": {
+              "class_type": "PrimitiveInt",
+              "title": "Width",
+              "input_key": "value"
+            }
+          }
+        }
+      ]
+    },
+    "height": {
+      "type": "int",
+      "maps": [
+        {
+          "target": {
+            "ref": "299.value",
+            "selector": {
+              "class_type": "PrimitiveInt",
+              "title": "Height",
+              "input_key": "value"
+            }
+          }
+        }
+      ]
+    },
+    "fps": {
+      "type": "int",
+      "default": 24,
+      "minimum": 1,
+      "maps": [
+        {
+          "target": {
+            "ref": "300.value",
+            "selector": {
+              "class_type": "PrimitiveInt",
+              "title": "Frame Rate",
+              "input_key": "value"
+            }
+          }
+        }
+      ]
+    },
+    "frames": {
+      "type": "int",
+      "minimum": 1,
+      "maps": [
+        {
+          "target": {
+            "ref": "301.value",
+            "selector": {
+              "class_type": "PrimitiveInt",
+              "title": "Length",
+              "input_key": "value"
+            }
+          }
+        }
+      ]
+    },
+    "duration": {
+      "type": "float",
+      "minimum": 0.1,
+      "maps": [
+        {
+          "target": {
+            "ref": "301.value",
+            "selector": {
+              "class_type": "PrimitiveInt",
+              "title": "Length",
+              "input_key": "value"
+            }
+          },
+          "transform": "seconds_to_frames",
+          "fps_param": "fps",
+          "round": "ceil"
+        }
+      ]
+    }
+  }
+}
