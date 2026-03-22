@@ -1,6 +1,6 @@
 services:
   comfyui2api:
-    image: python:3.13-slim
+    image: ghcr.io/astral-sh/uv:python3.13-bookworm-slim
     working_dir: /app
     volumes:
       - ./:/app
@@ -21,9 +21,9 @@ services:
       DEFAULT_IMG2VIDEO_WORKFLOW: "${DEFAULT_IMG2VIDEO_WORKFLOW:-img2video.json}"
       API_TOKEN: "${API_TOKEN:-}"
       PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-}"
+      UV_PROJECT_ENVIRONMENT: "/opt/comfyui2api-venv"
     command: >
-      sh -lc "pip install -r requirements.txt &&
-              pip install -e . &&
-              python -m comfyui2api"
+      sh -lc "uv sync --locked &&
+              uv run --locked --no-sync -m comfyui2api"
     ports:
       - "8460:8460"

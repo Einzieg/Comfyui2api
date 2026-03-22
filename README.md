@@ -29,15 +29,14 @@
 
 ```powershell
 cd E:\AI_Workstation\comfyui2api
-python -m pip install -r .\requirements.txt
-python -m pip install -e .
+uv sync --locked
 
 # 配置环境变量
 $env:COMFYUI_BASE_URL = "http://127.0.0.1:8188"
 $env:COMFYUI_INPUT_DIR = "E:\\AI_Workstation\\ComfyUI_windows_portable\\ComfyUI\\input"
 
 # 启动 API 服务
-python -m comfyui2api
+uv run --locked --no-sync -m comfyui2api
 ```
 服务默认监听在 `0.0.0.0:8000`。
 
@@ -50,8 +49,8 @@ python -m comfyui2api
 ```
 
 **一键脚本的自动化特性：**
-- 优先使用 `.venv\Scripts\python.exe`（无虚拟环境则自动创建）。
-- 自动执行 `pip install -e .` 安装依赖。
+- 使用 `uv sync --locked` 管理项目虚拟环境与依赖。
+- 默认使用项目级 `.venv\Scripts\python.exe` 作为运行解释器。
 - 默认设置 `COMFYUI_BASE_URL=http://127.0.0.1:8188` 与 `IMAGE_UPLOAD_MODE=comfy`。
 - 自动探测 ComfyUI 是否可达。
 - 如果请求的端口被占用或保留，会自动回退寻找下一个可用端口（请留意终端打印的 `Listening on:` 实际端口）。
@@ -132,7 +131,7 @@ $env:IMAGE_UPLOAD_MODE = "comfy"
 - `POST /v1/images/generations`：文生图。
 - `POST /v1/images/edits`：图生图（需提交 multipart，字段为 `image`）。
 - `POST /v1/images/variations`：图生图变体（需提交 multipart，字段为 `image`）。
-- `POST /v1/videos`：视频任务创建（multipart；可选 `input_reference` 作为图生视频输入）。
+- `POST /v1/videos`：视频任务创建（支持 JSON 或 multipart；可选 `input_reference` 作为图生视频输入）。
 - `GET /v1/videos/{video_id}`：查询视频状态（返回进度及短期签名 `url`）。
 - `GET /v1/videos/{video_id}/content`：直接下载视频流。
 

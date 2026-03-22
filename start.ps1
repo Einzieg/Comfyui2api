@@ -21,6 +21,14 @@ function Test-Command([string]$Name) {
     return $null -ne (Get-Command $Name -ErrorAction SilentlyContinue)
 }
 
+function Resolve-Uv() {
+    $cmd = Get-Command "uv" -ErrorAction SilentlyContinue
+    if ($null -eq $cmd) {
+        throw "uv was not found. Install uv first: https://docs.astral.sh/uv/getting-started/installation/"
+    }
+    return $cmd.Source
+}
+
 function Set-EnvDefault([string]$Name, [string]$Value) {
     $current = [Environment]::GetEnvironmentVariable($Name, "Process")
     if ([string]::IsNullOrWhiteSpace($current)) {
@@ -54,56 +62,21 @@ function Import-EnvFile([string]$Path) {
     }
 }
 
-function Resolve-BootstrapPython() {
-    if (Test-Command "py") {
-        return @("py", "-3")
-    }
-    if (Test-Command "python") {
-        return @("python")
-    }
-    throw "Python was not found. Install Python 3.11+ first."
-}
-
-function Ensure-Venv() {
-    if (Test-Path $venvPython) {
-        return
-    }
-
-    $bootstrap = Resolve-BootstrapPython
-    $bootstrapCmd = $bootstrap[0]
-    $bootstrapArgs = @()
-    if ($bootstrap.Length -gt 1) {
-        $bootstrapArgs = $bootstrap[1..($bootstrap.Length - 1)]
-    }
-    Write-Info "Creating .venv ..."
-    & $bootstrapCmd @bootstrapArgs -m venv (Join-Path $projectRoot ".venv")
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $venvPython)) {
-        throw "Failed to create .venv."
-    }
-}
-
-function Resolve-Python() {
+function Ensure-UvEnvironment([string]$UvExe) {
+    $args = @("sync", "--locked")
     if ($Python) {
         if (-not (Test-Path $Python)) {
             throw "Python executable not found: $Python"
         }
-        return (Resolve-Path $Python).Path
+        $args += @("--python", (Resolve-Path $Python).Path)
     }
-
-    Ensure-Venv
-    return $venvPython
-}
-
-function Ensure-PackageInstalled([string]$PythonExe) {
-    & $PythonExe -m pip show comfyui2api *> $null
-    if ($LASTEXITCODE -eq 0) {
-        return
-    }
-
-    Write-Info "Installing project into the virtual environment ..."
-    & $PythonExe -m pip install -e $projectRoot
+    Write-Info "Syncing project environment with uv ..."
+    & $UvExe @args
     if ($LASTEXITCODE -ne 0) {
-        throw "Failed to install comfyui2api into the virtual environment."
+        throw "Failed to sync project environment with uv."
+    }
+    if (-not (Test-Path $venvPython)) {
+        throw "uv did not create the expected project environment at $venvPython"
     }
 }
 
@@ -207,8 +180,7 @@ function Resolve-ListenPort([string]$ListenHostValue, [int]$RequestedPort) {
 
 Set-Location $projectRoot
 
-$pythonExe = Resolve-Python
-Ensure-PackageInstalled -PythonExe $pythonExe
+$uvExe = Resolve-Uv
 
 if (-not $EnvFile -and (Test-Path $defaultEnvFile)) {
     $EnvFile = $defaultEnvFile
@@ -244,7 +216,11 @@ if ($selectedPort -ne $resolvedPort) {
 }
 $resolvedPort = [Environment]::GetEnvironmentVariable("API_PORT", "Process")
 
+Ensure-UvEnvironment -UvExe $uvExe
+$pythonExe = (Resolve-Path $venvPython).Path
+
 Write-Info "Project root: $projectRoot"
+Write-Info "uv: $uvExe"
 Write-Info "Python: $pythonExe"
 Write-Info "ENV_FILE: $([Environment]::GetEnvironmentVariable('ENV_FILE', 'Process'))"
 Write-Info "COMFYUI_BASE_URL: $resolvedComfyBase"
@@ -261,5 +237,5 @@ if ($CheckOnly) {
 }
 
 Write-Info "Starting comfyui2api ..."
-& $pythonExe -m comfyui2api
+& $uvExe run --locked --no-sync -m comfyui2api
 exit $LASTEXITCODE
