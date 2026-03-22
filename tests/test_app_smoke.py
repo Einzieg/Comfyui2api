@@ -351,6 +351,35 @@ class AppSmokeTests(unittest.TestCase):
         kwargs = mock_create_job.await_args.kwargs
         self.assertEqual(kwargs["standard_params"], {"duration": "5", "size": "1280x720", "fps": "24", "frames": "120"})
 
+    def test_videos_create_accepts_json_body_with_duration_and_size_fields(self) -> None:
+        mock_create_job = AsyncMock(
+            return_value=SimpleNamespace(job_id="job-video-json", requested_model="test_txt2video", created_at=123)
+        )
+        with patch.object(self.app.state.jobs, "create_job", mock_create_job):
+            response = self.client.post(
+                "/v1/videos",
+                headers={"Authorization": "Bearer secret-token"},
+                json={
+                    "prompt": "astronaut walking on the moon",
+                    "model": "test_txt2video",
+                    "duration": 5,
+                    "width": 1280,
+                    "height": 720,
+                },
+            )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.json()
+        self.assertEqual(payload["object"], "video")
+        self.assertEqual(payload["model"], "test_txt2video")
+        kwargs = mock_create_job.await_args.kwargs
+        self.assertEqual(kwargs["kind"], "txt2video")
+        self.assertEqual(kwargs["workflow"], self.txt2video_workflow_name)
+        self.assertEqual(kwargs["requested_model"], "test_txt2video")
+        self.assertEqual(kwargs["prompt"], "astronaut walking on the moon")
+        self.assertEqual(kwargs["seconds"], "5")
+        self.assertEqual(kwargs["standard_params"], {"duration": "5", "width": "1280", "height": "720"})
+
     def test_videos_create_accepts_hybrid_video_workflow_for_txt2video(self) -> None:
         mock_create_job = AsyncMock(
             return_value=SimpleNamespace(job_id="job-hybrid", requested_model=self.hybrid_video_workflow_name, created_at=123)

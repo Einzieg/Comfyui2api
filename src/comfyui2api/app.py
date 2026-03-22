@@ -1406,49 +1406,112 @@ def create_app() -> FastAPI:
         wf = await _resolve_workflow_for_kind(kind=kind, requested_name=requested)
         return wf.name, requested or wf.name
 
+    async def _parse_videos_create_payload(request: Request) -> Dict[str, Any]:
+        content_type = (request.headers.get("content-type") or "").split(";", 1)[0].strip().lower()
+        if content_type == "application/json":
+            try:
+                body = await request.json()
+            except Exception as e:
+                raise _openai_error("Invalid JSON body", http_status=400) from e
+            if not isinstance(body, dict):
+                raise _openai_error("JSON body must be an object", http_status=400)
+
+            raw_metadata = body.get("metadata")
+            if isinstance(raw_metadata, str):
+                metadata = raw_metadata.strip()
+            elif raw_metadata is None:
+                metadata = ""
+            else:
+                metadata = json.dumps(raw_metadata, ensure_ascii=False)
+
+            raw_input_reference = _clean_optional_value(body.get("input_reference"))
+            if raw_input_reference is None:
+                raw_input_reference = _clean_optional_value(body.get("image"))
+
+            return {
+                "prompt": str(body.get("prompt") or "").strip(),
+                "model": str(body.get("model") or body.get("workflow") or "").strip(),
+                "seconds": str(
+                    _clean_optional_value(body.get("seconds"))
+                    or _clean_optional_value(body.get("duration"))
+                    or ""
+                ).strip(),
+                "size": str(body.get("size") or "").strip(),
+                "fps": str(body.get("fps") or "").strip(),
+                "frames": str(body.get("frames") or "").strip(),
+                "width": str(body.get("width") or "").strip(),
+                "height": str(body.get("height") or "").strip(),
+                "quality": str(body.get("quality") or "").strip(),
+                "metadata": metadata,
+                "input_reference_upload": None,
+                "input_reference_value": str(raw_input_reference or "").strip(),
+            }
+
+        form = await request.form()
+        raw_input_reference = form.get("input_reference")
+        input_reference_upload = raw_input_reference if hasattr(raw_input_reference, "read") else None
+        input_reference_value = ""
+        if raw_input_reference is not None and input_reference_upload is None:
+            input_reference_value = str(raw_input_reference or "").strip()
+
+        return {
+            "prompt": str(form.get("prompt") or "").strip(),
+            "model": str(form.get("model") or form.get("workflow") or "").strip(),
+            "seconds": str(form.get("seconds") or form.get("duration") or "").strip(),
+            "size": str(form.get("size") or "").strip(),
+            "fps": str(form.get("fps") or "").strip(),
+            "frames": str(form.get("frames") or "").strip(),
+            "width": str(form.get("width") or "").strip(),
+            "height": str(form.get("height") or "").strip(),
+            "quality": str(form.get("quality") or "").strip(),
+            "metadata": str(form.get("metadata") or "").strip(),
+            "input_reference_upload": input_reference_upload,
+            "input_reference_value": input_reference_value,
+        }
+
     @app.post("/v1/videos", status_code=201)
     async def openai_videos_create(
         request: Request,
-        prompt: str = Form(...),
-        model: str = Form(""),
-        seconds: str = Form(""),
-        size: str = Form(""),
-        fps: str = Form(""),
-        frames: str = Form(""),
-        input_reference: Optional[UploadFile] = File(default=None),
-        metadata: str = Form(""),
         authorization: Optional[str] = Header(default=None),
     ) -> Dict[str, Any]:
         _require_auth(cfg, authorization)
 
-        prompt = (prompt or "").strip()
+        payload = await _parse_videos_create_payload(request)
+        prompt = str(payload.get("prompt") or "").strip()
         if not prompt:
             raise _openai_error("Missing 'prompt'")
 
         kind = "txt2video"
         image_rel = ""
+        input_reference = payload.get("input_reference_upload")
+        input_reference_value = str(payload.get("input_reference_value") or "").strip()
         if input_reference is not None:
             raw = await input_reference.read()
             image_rel = await _store_input_image_bytes(data=raw, filename_hint=input_reference.filename)
             kind = "img2video"
+        elif input_reference_value:
+            image_rel = await _store_input_image_value(input_reference_value, filename_hint="input_reference")
+            kind = "img2video"
 
-        workflow, requested_model = await _workflow_from_model_or_default(kind=kind, model=model)
+        workflow, requested_model = await _workflow_from_model_or_default(kind=kind, model=str(payload.get("model") or ""))
         standard_params = _collect_standard_params(
             {
-                "duration": seconds,
-                "size": size,
-                "fps": fps,
-                "frames": frames,
+                "duration": payload.get("seconds"),
+                "size": payload.get("size"),
+                "fps": payload.get("fps"),
+                "frames": payload.get("frames"),
+                "width": payload.get("width"),
+                "height": payload.get("height"),
             }
         )
         job = await jobs.create_job(
             kind=kind,
             workflow=workflow,
             requested_model=requested_model,
-            seconds=(seconds or "").strip(),
-            size=(size or "").strip(),
-            quality="standard",
-            metadata=(metadata or "").strip(),
+            seconds=str(payload.get("seconds") or "").strip(),
+            size=str(payload.get("size") or "").strip(),
+            quality=str(payload.get("quality") or "").strip() or "standard",
+            metadata=str(payload.get("metadata") or "").strip(),
             prompt=prompt,
             image=image_rel,
             standard_params=standard_params,
