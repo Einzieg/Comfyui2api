@@ -215,6 +215,44 @@ def _collect_standard_params(values: Mapping[str, Any], *, aliases: Mapping[str,
     return params
 
 
+async def _collect_workflow_request_params(
+    *,
+    spec: Any,
+    values: Mapping[str, Any],
+    store_input_image_bytes: Any,
+    store_input_image_value: Any,
+    skip: set[str] | None = None,
+) -> dict[str, Any]:
+    if spec is None or not getattr(spec, "parameters", None):
+        return {}
+
+    skipped = set(skip or ())
+    params: dict[str, Any] = {}
+    for name, definition in spec.parameters.items():
+        if name in skipped or name not in values:
+            continue
+        raw_value = values.get(name)
+        if definition.type == "image":
+            if hasattr(raw_value, "read"):
+                data = await raw_value.read()
+                if not data:
+                    continue
+                filename_hint = getattr(raw_value, "filename", None) or name
+                params[name] = await store_input_image_bytes(data=data, filename_hint=filename_hint)
+                continue
+            cleaned = _clean_optional_value(raw_value)
+            if cleaned is None:
+                continue
+            params[name] = await store_input_image_value(str(cleaned), filename_hint=name)
+            continue
+
+        cleaned = _clean_optional_value(raw_value)
+        if cleaned is None:
+            continue
+        params[name] = cleaned
+    return params
+
+
 def _extract_status_code(error_message: str) -> int | None:
     match = re.search(r"status=(\d{3})", error_message or "")
     if not match:
@@ -1023,6 +1061,30 @@ def create_app() -> FastAPI:
         seconds_value = _clean_optional_value(body.get("seconds"))
         if seconds_value is not None and "duration" not in standard_params:
             standard_params["duration"] = seconds_value
+        standard_params.update(
+            await _collect_workflow_request_params(
+                spec=wf.parameter_spec,
+                values=body,
+                store_input_image_bytes=_store_input_image_bytes,
+                store_input_image_value=_store_input_image_value,
+                skip={
+                    *STANDARD_PARAMETER_ORDER,
+                    "kind",
+                    "workflow",
+                    "model",
+                    "prompt",
+                    "negative_prompt",
+                    "image",
+                    "image_base64",
+                    "image_filename",
+                    "prompt_node",
+                    "negative_prompt_node",
+                    "image_node",
+                    "overrides",
+                    "seconds",
+                },
+            )
+        )
 
         job = await jobs.create_job(
             kind=kind,
@@ -1453,6 +1515,7 @@ def create_app() -> FastAPI:
                 "metadata": metadata,
                 "input_reference_upload": None,
                 "input_reference_value": str(raw_input_reference or "").strip(),
+                "raw_values": body,
             }
 
         form = await request.form()
@@ -1475,6 +1538,7 @@ def create_app() -> FastAPI:
             "metadata": str(form.get("metadata") or "").strip(),
             "input_reference_upload": input_reference_upload,
             "input_reference_value": input_reference_value,
+            "raw_values": form,
         }
 
     @app.post("/v1/videos", status_code=200)
@@ -1502,6 +1566,7 @@ def create_app() -> FastAPI:
             kind = "img2video"
 
         workflow, requested_model = await _workflow_from_model_or_default(kind=kind, model=str(payload.get("model") or ""))
+        wf = await _resolve_workflow_name(workflow)
         standard_params = _collect_standard_params(
             {
                 "duration": payload.get("seconds"),
@@ -1511,6 +1576,31 @@ def create_app() -> FastAPI:
                 "width": payload.get("width"),
                 "height": payload.get("height"),
             }
+        )
+        standard_params.update(
+            await _collect_workflow_request_params(
+                spec=wf.parameter_spec,
+                values=payload.get("raw_values") or {},
+                store_input_image_bytes=_store_input_image_bytes,
+                store_input_image_value=_store_input_image_value,
+                skip={
+                    *STANDARD_PARAMETER_ORDER,
+                    "prompt",
+                    "model",
+                    "workflow",
+                    "seconds",
+                    "duration",
+                    "size",
+                    "fps",
+                    "frames",
+                    "width",
+                    "height",
+                    "quality",
+                    "metadata",
+                    "input_reference",
+                    "image",
+                },
+            )
         )
         job = await jobs.create_job(
             kind=kind,
@@ -1648,6 +1738,7 @@ def create_app() -> FastAPI:
             image_rel = await _store_input_image_value(image_val, filename_hint="image")
 
         workflow, requested_model = await _workflow_from_model_or_default(kind=kind, model=model)
+        wf = await _resolve_workflow_name(workflow)
         standard_params = _collect_standard_params(
             {
                 "duration": body.get("duration"),
@@ -1660,6 +1751,32 @@ def create_app() -> FastAPI:
                 "cfg": body.get("cfg"),
                 "seed": body.get("seed"),
             }
+        )
+        standard_params.update(
+            await _collect_workflow_request_params(
+                spec=wf.parameter_spec,
+                values=body,
+                store_input_image_bytes=_store_input_image_bytes,
+                store_input_image_value=_store_input_image_value,
+                skip={
+                    *STANDARD_PARAMETER_ORDER,
+                    "prompt",
+                    "model",
+                    "workflow",
+                    "duration",
+                    "size",
+                    "fps",
+                    "frames",
+                    "width",
+                    "height",
+                    "steps",
+                    "cfg",
+                    "seed",
+                    "image",
+                    "metadata",
+                    "response_format",
+                },
+            )
         )
 
         meta_obj: Dict[str, Any] = {}

@@ -183,6 +183,59 @@ class WorkflowParameterMappingTests(unittest.TestCase):
             self.assertEqual(spec.image_node, "1.image")
             self.assertEqual(spec.negative_prompt_node, "")
 
+    def test_sidecar_mapping_supports_custom_string_and_image_parameters(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            root = Path(tempdir)
+            workflows_dir = root / "workflows"
+            sidecar_dir = workflows_dir / ".comfyui2api"
+            workflows_dir.mkdir(parents=True, exist_ok=True)
+            sidecar_dir.mkdir(parents=True, exist_ok=True)
+
+            workflow_path = workflows_dir / "dual_input.json"
+            workflow_obj = {
+                "prompt": {
+                    "437": {"class_type": "LoadImage", "inputs": {"image": "primary.png"}},
+                    "440": {"class_type": "LoadImage", "inputs": {"image": "secondary.png"}},
+                    "438": {"class_type": "PrimitiveStringMultiline", "inputs": {"value": "prompt one"}},
+                    "325": {"class_type": "PrimitiveStringMultiline", "inputs": {"value": "prompt two"}},
+                    "500": {"class_type": "SaveVideo", "inputs": {"filename_prefix": "sample"}},
+                }
+            }
+            workflow_path.write_text(json.dumps(workflow_obj, ensure_ascii=False), encoding="utf-8")
+
+            sidecar = {
+                "version": 1,
+                "kind": "img2video",
+                "prompt_node": "438.value",
+                "image_node": "437.image",
+                "parameters": {
+                    "prompt2": {"type": "string", "maps": [{"target": "325.value"}]},
+                    "image2": {"type": "image", "maps": [{"target": "440.image"}]},
+                },
+            }
+            (sidecar_dir / "dual_input.params.json").write_text(json.dumps(sidecar, ensure_ascii=False), encoding="utf-8")
+
+            spec = load_workflow_parameter_spec(
+                workflows_dir=workflows_dir,
+                workflow_path=workflow_path,
+                expected_kind="img2video",
+            )
+
+            self.assertIsNotNone(spec)
+            overrides = resolve_standard_overrides(
+                workflow_obj=workflow_obj,
+                spec=spec,
+                request_params={"prompt2": "secondary prompt", "image2": "uploads/second.png"},
+            )
+
+            self.assertEqual(
+                overrides,
+                [
+                    ("325", "value", "secondary prompt"),
+                    ("440", "image", "uploads/second.png"),
+                ],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

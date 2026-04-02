@@ -120,6 +120,8 @@ def normalize_parameter_value(definition: WorkflowParameterDefinition, raw_value
         value = int(raw_value)
     elif ptype == "float":
         value = float(raw_value)
+    elif ptype == "image":
+        value = _normalize_string(raw_value)
     elif ptype == "string":
         value = _normalize_string(raw_value)
     else:

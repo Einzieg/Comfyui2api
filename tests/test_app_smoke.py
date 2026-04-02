@@ -118,6 +118,38 @@ class AppSmokeTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
+        dual_input_video_workflow_name = "test_dual_input_video.json"
+        (workflows_dir / dual_input_video_workflow_name).write_text(
+            json.dumps(
+                {
+                    "prompt": {
+                        "325": {"class_type": "PrimitiveStringMultiline", "inputs": {"value": "second prompt"}},
+                        "437": {"class_type": "LoadImage", "inputs": {"image": "primary.png"}},
+                        "438": {"class_type": "PrimitiveStringMultiline", "inputs": {"value": "first prompt"}},
+                        "440": {"class_type": "LoadImage", "inputs": {"image": "secondary.png"}},
+                        "500": {"class_type": "SaveVideo", "inputs": {"filename_prefix": "sample"}},
+                    }
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        (workflows_dir / ".comfyui2api" / "test_dual_input_video.params.json").write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "kind": "img2video",
+                    "prompt_node": "438.value",
+                    "image_node": "437.image",
+                    "parameters": {
+                        "prompt2": {"type": "string", "maps": [{"target": "325.value"}]},
+                        "image2": {"type": "image", "maps": [{"target": "440.image"}]},
+                    },
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
 
         env = {
             "API_TOKEN": "secret-token",
@@ -144,6 +176,7 @@ class AppSmokeTests(unittest.TestCase):
         cls.workflow_name = workflow_name
         cls.txt2video_workflow_name = txt2video_workflow_name
         cls.hybrid_video_workflow_name = hybrid_video_workflow_name
+        cls.dual_input_video_workflow_name = dual_input_video_workflow_name
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -447,6 +480,38 @@ class AppSmokeTests(unittest.TestCase):
         self.assertEqual(response.json()["status"], "queued")
         kwargs = mock_create_job.await_args.kwargs
         self.assertEqual(kwargs["workflow"], self.hybrid_video_workflow_name)
+
+    def test_videos_create_collects_custom_secondary_prompt_and_image_parameters(self) -> None:
+        first_image = "data:image/png;base64," + base64.b64encode(b"first-image").decode("ascii")
+        second_image = "data:image/png;base64," + base64.b64encode(b"second-image").decode("ascii")
+        mock_create_job = AsyncMock(
+            return_value=SimpleNamespace(
+                job_id="job-dual-input",
+                requested_model=self.dual_input_video_workflow_name,
+                created_at=123,
+            )
+        )
+        with patch.object(self.app.state.jobs, "create_job", mock_create_job):
+            response = self.client.post(
+                "/v1/videos",
+                headers={"Authorization": "Bearer secret-token"},
+                json={
+                    "prompt": "primary prompt",
+                    "prompt2": "secondary prompt",
+                    "model": self.dual_input_video_workflow_name,
+                    "image": first_image,
+                    "image2": second_image,
+                    "duration": 5,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        kwargs = mock_create_job.await_args.kwargs
+        self.assertEqual(kwargs["workflow"], self.dual_input_video_workflow_name)
+        self.assertEqual(kwargs["prompt"], "primary prompt")
+        self.assertEqual(kwargs["standard_params"]["duration"], "5")
+        self.assertEqual(kwargs["standard_params"]["prompt2"], "secondary prompt")
+        self.assertTrue(kwargs["standard_params"]["image2"])
 
     def test_videos_get_returns_signed_content_url(self) -> None:
         from comfyui2api.jobs import Job, JobOutput
