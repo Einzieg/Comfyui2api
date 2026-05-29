@@ -12,3 +12,5 @@ dist/
 build/
 *.egg-info/
 
+comfyui-api-workflows/*.json
+comfyui-api-workflows/.comfyui2api
