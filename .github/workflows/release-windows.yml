@@ -1,0 +1,178 @@
+name: Build Windows Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag/name for manual publishing, for example v0.1.0"
+        required: false
+        type: string
+      publish_release:
+        description: "Create or update a GitHub Release"
+        required: true
+        default: false
+        type: boolean
+      prerelease:
+        description: "Mark a manually published release as prerelease"
+        required: true
+        default: false
+        type: boolean
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build Windows onedir package
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Resolve package version
+        id: package-version
+        run: |
+          if ("${{ github.ref_type }}" -eq "tag") {
+            $version = "${{ github.ref_name }}"
+          } elseif ("${{ inputs.version }}" -ne "") {
+            $version = "${{ inputs.version }}"
+          } else {
+            $version = "build-${{ github.run_number }}"
+          }
+
+          "PACKAGE_VERSION=$version" >> $env:GITHUB_ENV
+          "package_version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Build Windows executables
+        run: .\scripts\build_windows.ps1
+
+      - name: Smoke test packaged CLI
+        run: |
+          $ErrorActionPreference = "Stop"
+          $port = 8767
+          $token = "ci-admin-token"
+          $env:ENV_FILE = Join-Path $PWD ".github-actions.env"
+          $env:COMFYUI_STARTUP_CHECK = "0"
+          $env:ENABLE_WORKFLOW_WATCH = "0"
+          $env:ADMIN_TOKEN = $token
+
+          $exe = Join-Path $PWD "dist\comfyui2api\comfyui2api-cli.exe"
+          $serveArgs = @("serve", "--host", "127.0.0.1", "--port", [string]$port, "--env-file", $env:ENV_FILE, "--log-level", "warning")
+          $proc = $null
+
+          try {
+            $proc = Start-Process -FilePath $exe -ArgumentList $serveArgs -PassThru -WindowStyle Hidden
+            $health = $null
+            for ($i = 0; $i -lt 50; $i++) {
+              if ($proc.HasExited) {
+                throw "Packaged server exited early with code $($proc.ExitCode)"
+              }
+              try {
+                $health = Invoke-RestMethod -Uri "http://127.0.0.1:$port/health" -TimeoutSec 2
+                break
+              } catch {
+                Start-Sleep -Milliseconds 500
+              }
+            }
+            if ($null -eq $health -or $health.status -ne "ok") {
+              throw "Timed out waiting for packaged server health endpoint"
+            }
+
+            $ui = Invoke-WebRequest -Uri "http://127.0.0.1:$port/ui/" -TimeoutSec 5
+            if ($ui.StatusCode -ne 200 -or $ui.Content -notmatch '<div id="root"></div>') {
+              throw "Packaged Web UI did not serve index.html"
+            }
+
+            $tasks = Invoke-RestMethod -Uri "http://127.0.0.1:$port/v1/admin/tasks" -Headers @{ Authorization = "Bearer $token" } -TimeoutSec 5
+            if ($null -eq $tasks.items) {
+              throw "Packaged admin tasks endpoint did not return an items array"
+            }
+          } finally {
+            if ($null -ne $proc -and -not $proc.HasExited) {
+              Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            }
+            $listeners = @(Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue)
+            foreach ($listener in $listeners) {
+              if ($listener.OwningProcess -gt 0) {
+                Stop-Process -Id $listener.OwningProcess -Force -ErrorAction SilentlyContinue
+              }
+            }
+          }
+
+      - name: Archive Windows package
+        run: |
+          $archive = "comfyui2api-windows-$env:PACKAGE_VERSION.zip"
+          $archivePath = Join-Path $PWD "dist\$archive"
+          Compress-Archive -Path "dist\comfyui2api\*" -DestinationPath $archivePath -Force
+          "PACKAGE_ARCHIVE=$archivePath" >> $env:GITHUB_ENV
+          "PACKAGE_ARCHIVE_NAME=$archive" >> $env:GITHUB_ENV
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: comfyui2api-windows-${{ steps.package-version.outputs.package_version }}
+          path: ${{ env.PACKAGE_ARCHIVE }}
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: github.ref_type == 'tag' || inputs.publish_release == true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $false
+          $tag = "$env:PACKAGE_VERSION"
+          if ("${{ github.ref_type }}" -ne "tag" -and "${{ inputs.version }}" -eq "") {
+            throw "Manual release publishing requires the version input, for example v0.1.0."
+          }
+
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag "$env:PACKAGE_ARCHIVE" --clobber
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to upload release asset."
+            }
+          } else {
+            $releaseArgs = @(
+              "release", "create", $tag, "$env:PACKAGE_ARCHIVE",
+              "--title", $tag,
+              "--notes", "Windows onedir package built from $env:GITHUB_SHA.",
+              "--target", "$env:GITHUB_SHA"
+            )
+            if ("${{ inputs.prerelease }}" -eq "true") {
+              $releaseArgs += "--prerelease"
+            }
+            gh @releaseArgs
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to create GitHub Release."
+            }
+          }

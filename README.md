@@ -35,10 +35,10 @@ uv sync --locked
 $env:COMFYUI_BASE_URL = "http://127.0.0.1:8188"
 $env:COMFYUI_INPUT_DIR = "E:\\AI_Workstation\\ComfyUI_windows_portable\\ComfyUI\\input"
 
-# 启动 API 服务
-uv run --locked --no-sync -m comfyui2api
+# 只启动 API 服务
+uv run --locked --no-sync -m comfyui2api serve
 ```
-服务默认监听在 `0.0.0.0:8000`。
+命令行模式默认监听在 `0.0.0.0:8000`。无参数或 `ui` 模式会默认监听 `127.0.0.1:8000` 并打开 `/ui`。
 
 ### 2. 🖱️ 一键启动（推荐 Windows 用户）
 
@@ -103,6 +103,11 @@ $env:IMAGE_UPLOAD_MODE = "comfy"
 | --- | --- | --- |
 | `WORKFLOWS_DIR` | `.\comfyui-api-workflows` | API 工作流存放目录 |
 | `RUNS_DIR` | `.\runs` | 任务输出文件的存放目录 |
+| `DATA_DIR` | `.\data` | SQLite 任务历史数据库目录 |
+| `DATABASE_PATH` | `.\data\comfyui2api.db` | SQLite 任务历史数据库路径 |
+| `COMFYUI2API_UI_ENABLED` | `true` | 是否挂载内置 Web UI |
+| `COMFYUI2API_DISABLE_UI` | `false` | 设为 `1` 时禁用 `/ui` |
+| `ADMIN_TOKEN` | *继承 API_TOKEN* | 管理台 REST/WebSocket 鉴权令牌 |
 | `INPUT_SUBDIR` | `comfyui2api` | 写入 ComfyUI input 时的专属子目录 |
 | `WORKER_CONCURRENCY` | `1` | 同时并发运行的任务数量 |
 | `JOB_RETENTION_DAYS`  | *空* | 已完成/失败任务在内存和磁盘中的保留天数，设置后优先于 `JOB_RETENTION_SECONDS` |
@@ -119,6 +124,107 @@ $env:IMAGE_UPLOAD_MODE = "comfy"
 | `DEFAULT_IMG2VIDEO_WORKFLOW`| `img2video.json` | 默认图生视频工作流 |
 | `SIGNED_URL_SECRET` | 继承 `API_TOKEN` | 媒体下载短期签名的加密密钥 |
 | `SIGNED_URL_TTL_SECONDS` | `3600` | 生成的媒体访问链接有效期（秒） |
+
+---
+
+## 桌面版 / Web UI
+
+源码运行时可以直接启动内置任务面板：
+
+```powershell
+# UI 模式：默认监听 127.0.0.1 并自动打开浏览器
+uv run -m comfyui2api ui
+
+# UI 模式但不自动打开浏览器
+uv run -m comfyui2api ui --no-open
+
+# 命令行模式：只启动 API 服务
+uv run -m comfyui2api serve
+
+# 禁用内置 UI
+uv run -m comfyui2api serve --disable-ui
+```
+
+UI 地址：
+
+```text
+http://127.0.0.1:8000/ui
+```
+
+管理台接口：
+
+- `GET /v1/admin/tasks`：按时间、任务 ID、状态、类型、平台筛选任务。
+- `GET /v1/admin/tasks/{job_id}`：查看任务详情和输出文件。
+- `GET /v1/admin/stats`：查看运行时目录、数据库路径和统计信息。
+- `WS /v1/admin/tasks/ws`：订阅全局任务变化。
+
+如果配置了 `ADMIN_TOKEN`，管理台优先使用它；否则复用 `API_TOKEN`。REST 请求使用：
+
+```text
+Authorization: Bearer <token>
+```
+
+WebSocket 支持 `Authorization` header，也支持 `?token=<token>` 或 `?access_token=<token>`。
+
+任务历史写入 SQLite，默认路径：
+
+```text
+data/comfyui2api.db
+```
+
+服务重启时，历史 `completed` / `failed` 任务仍可查询；重启前仍处于 `pending` / `queued` / `running` 的任务会标记为 `failed`，错误为 `Task interrupted by server restart.`。
+
+## Windows 打包
+
+构建前端、复制静态资源并生成两个 onedir EXE：
+
+```powershell
+.\scripts\build_windows.ps1
+```
+
+输出目录：
+
+```text
+dist/comfyui2api/
+```
+
+生成文件：
+
+- `comfyui2api.exe`：普通用户入口，默认 UI 模式，不显示控制台窗口。
+- `comfyui2api-cli.exe`：命令行入口，保留控制台日志，支持 `serve` / `ui` 参数。
+
+打包版的 `comfyui-api-workflows/`、`runs/`、`data/`、`logs/` 会位于 EXE 所在目录，不写入 PyInstaller 临时解包目录。
+
+### GitHub Actions 在线打包发版
+
+仓库内置了 `.github/workflows/release-windows.yml`，可以在 GitHub 托管的 Windows runner 上完成前端构建、PyInstaller 打包、冒烟测试、压缩上传和发版。
+
+触发方式：
+
+- 推送 `v*` tag，例如 `v0.1.0`：自动构建并创建/更新同名 GitHub Release。
+- 在 GitHub 页面进入 **Actions -> Build Windows Release -> Run workflow**：手动在线打包。
+- 手动运行时如果只想拿构建产物，保持 `publish_release=false` 即可；如果要发版，填写 `version`（例如 `v0.1.0`）并设置 `publish_release=true`。
+
+构建产物：
+
+```text
+comfyui2api-windows-<version>.zip
+```
+
+zip 内包含：
+
+```text
+comfyui2api/
+  comfyui2api.exe
+  comfyui2api-cli.exe
+  _internal/
+  comfyui-api-workflows/
+  runs/
+  data/
+  logs/
+```
+
+发版权限使用 GitHub Actions 自动注入的 `GITHUB_TOKEN`，workflow 已声明 `contents: write`。如果仓库禁用了 Actions 写权限，需要在仓库设置中允许 workflow 写入 Release。
 
 ---
 

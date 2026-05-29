@@ -156,6 +156,8 @@ class AppSmokeTests(unittest.TestCase):
             "COMFYUI_BASE_URL": "http://127.0.0.1:8188",
             "COMFYUI_INPUT_DIR": str(root / "input"),
             "COMFYUI_STARTUP_CHECK": "0",
+            "DATA_DIR": str(root / "data"),
+            "DATABASE_PATH": str(root / "data" / "comfyui2api.db"),
             "DEFAULT_TXT2IMG_WORKFLOW": workflow_name,
             "DEFAULT_IMG2IMG_WORKFLOW": workflow_name,
             "DEFAULT_IMG2VIDEO_WORKFLOW": workflow_name,

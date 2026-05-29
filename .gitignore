@@ -1,5 +1,7 @@
 .env
 runs/
+data/
+logs/
 __pycache__/
 *.pyc
 *.pyo
@@ -11,6 +13,11 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+*.tsbuildinfo
+frontend/node_modules/
+frontend/dist/
+.tmp-*
+.pack-*
 
 comfyui-api-workflows/*.json
 comfyui-api-workflows/.comfyui2api

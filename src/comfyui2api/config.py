@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -39,6 +40,20 @@ def _job_retention_seconds() -> int:
     return max(0, _env_int("JOB_RETENTION_SECONDS", 604_800))
 
 
+def runtime_base_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parents[2]
+
+
+def package_resource_dir() -> Path:
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        base = Path(sys._MEIPASS).resolve()
+        package_dir = base / "comfyui2api"
+        return package_dir if package_dir.exists() else base
+    return Path(__file__).resolve().parent
+
+
 def _default_comfyui_input_dir(project_root: Path) -> Path:
     workspace_root = project_root.parent
     candidate = workspace_root / "ComfyUI_windows_portable" / "ComfyUI" / "input"
@@ -55,6 +70,11 @@ class Config:
     comfy_base_url: str
     workflows_dir: Path
     runs_dir: Path
+    data_dir: Path
+    database_path: Path
+    ui_enabled: bool
+    ui_dist_dir: Path
+    admin_token: str
     comfyui_input_dir: Path
     input_subdir: str
     image_upload_mode: str
@@ -81,10 +101,14 @@ class Config:
 
 
 def load_config() -> Config:
-    project_root = Path(__file__).resolve().parents[2]
+    project_root = runtime_base_dir()
 
     workflows_dir = Path(_env_str("WORKFLOWS_DIR", str(project_root / "comfyui-api-workflows"))).expanduser()
     runs_dir = Path(_env_str("RUNS_DIR", str(project_root / "runs"))).expanduser()
+    data_dir = Path(_env_str("DATA_DIR", str(project_root / "data"))).expanduser()
+    database_path = Path(_env_str("DATABASE_PATH", str(data_dir / "comfyui2api.db"))).expanduser()
+    ui_enabled = _env_bool("COMFYUI2API_UI_ENABLED", True) and not _env_bool("COMFYUI2API_DISABLE_UI", False)
+    api_token = _env_str("API_TOKEN", "")
 
     comfyui_input_dir = Path(
         _env_str("COMFYUI_INPUT_DIR", str(_default_comfyui_input_dir(project_root)))
@@ -98,11 +122,16 @@ def load_config() -> Config:
     return Config(
         api_listen=_env_str("API_LISTEN", "0.0.0.0"),
         api_port=_env_int("API_PORT", 8000),
-        api_token=_env_str("API_TOKEN", ""),
+        api_token=api_token,
         public_base_url=_env_str("PUBLIC_BASE_URL", "").rstrip("/"),
         comfy_base_url=comfy_base_url,
         workflows_dir=workflows_dir,
         runs_dir=runs_dir,
+        data_dir=data_dir,
+        database_path=database_path,
+        ui_enabled=ui_enabled,
+        ui_dist_dir=Path(_env_str("COMFYUI2API_UI_DIST_DIR", str(package_resource_dir() / "webui_dist"))).expanduser(),
+        admin_token=_env_str("ADMIN_TOKEN", "") or api_token,
         comfyui_input_dir=comfyui_input_dir,
         input_subdir=_env_str("INPUT_SUBDIR", "comfyui2api").strip("/").strip("\\"),
         image_upload_mode=_env_str("IMAGE_UPLOAD_MODE", "auto"),

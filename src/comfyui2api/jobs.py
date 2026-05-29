@@ -41,6 +41,7 @@ class Job:
     status: str
     kind: str
     workflow: str
+    platform: str = "Native"
     requested_model: str = ""
     seconds: str = ""
     size: str = ""
@@ -61,9 +62,16 @@ class Job:
     client_id: str = ""
     queue_number: Optional[int] = None
 
+    started_at_utc: str = ""
+    finished_at_utc: str = ""
+    updated_at_utc: str = ""
+    duration_s: int | None = None
+
     current_node: str = ""
     progress: Dict[str, Any] = field(default_factory=dict)
+    progress_percent: int = 0
     error: str = ""
+    request_json: dict[str, Any] = field(default_factory=dict)
 
     run_dir: str = ""
     outputs: list[JobOutput] = field(default_factory=list)
@@ -79,10 +87,12 @@ class JobManager:
         cfg: Config,
         registry: WorkflowRegistry,
         comfy: ComfyUIClient,
+        store: Any | None = None,
     ) -> None:
         self.cfg = cfg
         self.registry = registry
         self.comfy = comfy
+        self.store = store
 
         self._lock = asyncio.Lock()
         self._jobs: Dict[str, Job] = {}
@@ -91,6 +101,8 @@ class JobManager:
 
         self._subscribers: Dict[str, set[Any]] = {}  # job_id -> set[WebSocket]
         self._sub_lock = asyncio.Lock()
+        self._global_subscribers: set[Any] = set()
+        self._global_sub_lock = asyncio.Lock()
 
     async def start_workers(self) -> None:
         for i in range(self.cfg.worker_concurrency):
@@ -113,6 +125,7 @@ class JobManager:
         size: str = "",
         quality: str = "",
         metadata: str = "",
+        platform: str = "Native",
         negative_prompt: str = "",
         image: str = "",
         prompt_node: str = "",
@@ -120,6 +133,7 @@ class JobManager:
         image_node: str = "",
         overrides: Optional[list[tuple[str, str, Any]]] = None,
         standard_params: Optional[Dict[str, Any]] = None,
+        request_json: Optional[dict[str, Any]] = None,
     ) -> Job:
         job_id = uuid.uuid4().hex
         job = Job(
@@ -129,6 +143,7 @@ class JobManager:
             status="pending",
             kind=kind,
             workflow=workflow,
+            platform=platform or "Native",
             requested_model=requested_model or "",
             seconds=seconds or "",
             size=size or "",
@@ -142,9 +157,24 @@ class JobManager:
             image_node=image_node or "",
             overrides=list(overrides or []),
             standard_params=dict(standard_params or {}),
+            updated_at_utc=utc_now_iso(),
+            request_json=dict(request_json) if request_json is not None else self._default_request_summary(
+                kind=kind,
+                workflow=workflow,
+                requested_model=requested_model,
+                seconds=seconds,
+                size=size,
+                quality=quality,
+                metadata=metadata,
+                prompt=prompt,
+                negative_prompt=negative_prompt,
+                image=image,
+                standard_params=standard_params or {},
+            ),
         )
         async with self._lock:
             self._jobs[job_id] = job
+        await self._persist_job(job)
         await self._queue.put(job_id)
         await self._publish(job_id, {"type": "job_created", "data": self.public_job(job)})
         return job
@@ -162,9 +192,14 @@ class JobManager:
             "job_id": job.job_id,
             "created_at": job.created_at,
             "created_at_utc": job.created_at_utc,
+            "started_at_utc": job.started_at_utc or None,
+            "finished_at_utc": job.finished_at_utc or None,
+            "updated_at_utc": job.updated_at_utc or None,
+            "duration_s": job.duration_s,
             "status": job.status,
             "kind": job.kind,
             "workflow": job.workflow,
+            "platform": job.platform,
             "requested_model": job.requested_model or None,
             "seconds": job.seconds or None,
             "size": job.size or None,
@@ -174,8 +209,11 @@ class JobManager:
             "queue_number": job.queue_number,
             "current_node": job.current_node or None,
             "progress": job.progress or None,
+            "progress_percent": job.progress_percent,
             "error": job.error or None,
+            "request_json": job.request_json or {},
             "url": job.url or None,
+            "output_count": len(job.outputs or []),
             "outputs": [o.__dict__ for o in (job.outputs or [])],
         }
 
@@ -192,17 +230,24 @@ class JobManager:
             if not s:
                 self._subscribers.pop(job_id, None)
 
+    async def subscribe_all(self, ws: Any) -> None:
+        async with self._global_sub_lock:
+            self._global_subscribers.add(ws)
+
+    async def unsubscribe_all(self, ws: Any) -> None:
+        async with self._global_sub_lock:
+            self._global_subscribers.discard(ws)
+
     async def _publish(self, job_id: str, event: Dict[str, Any]) -> None:
         payload = copy.deepcopy(event)
         async with self._sub_lock:
             sockets = list(self._subscribers.get(job_id, set()))
-        if not sockets:
-            return
         for ws in sockets:
             try:
                 await ws.send_json(payload)
             except Exception:
                 await self.unsubscribe(job_id, ws)
+        await self._publish_global_snapshot(job_id, event_type=str(event.get("type") or "task_updated"))
 
     async def _update(self, job_id: str, **fields: Any) -> Optional[Job]:
         async with self._lock:
@@ -211,7 +256,83 @@ class JobManager:
                 return None
             for k, v in fields.items():
                 setattr(job, k, v)
-            return job
+            self._apply_derived_fields(job, fields)
+            updated = job
+        await self._persist_job(updated)
+        if "outputs" in fields and self.store is not None:
+            await self.store.replace_outputs(job_id, updated.outputs or [])
+        return updated
+
+    def _default_request_summary(
+        self,
+        *,
+        kind: str,
+        workflow: str,
+        requested_model: str,
+        seconds: str,
+        size: str,
+        quality: str,
+        metadata: str,
+        prompt: str,
+        negative_prompt: str,
+        image: str,
+        standard_params: Dict[str, Any],
+    ) -> dict[str, Any]:
+        summary: dict[str, Any] = {
+            "kind": kind,
+            "workflow": workflow,
+            "model": requested_model or None,
+            "prompt": _truncate_text(prompt),
+            "negative_prompt": _truncate_text(negative_prompt),
+            "seconds": seconds or None,
+            "size": size or None,
+            "quality": quality or None,
+            "metadata": _truncate_text(metadata),
+            "standard_params": dict(standard_params or {}),
+        }
+        if image:
+            summary["image"] = {"source": "stored_input", "value": _truncate_text(image, limit=180)}
+        return {k: v for k, v in summary.items() if v not in (None, "", {}, [])}
+
+    def _apply_derived_fields(self, job: Job, changed: Dict[str, Any]) -> None:
+        now_iso = utc_now_iso()
+        job.updated_at_utc = str(changed.get("updated_at_utc") or now_iso)
+        if job.status == "running" and not job.started_at_utc:
+            job.started_at_utc = now_iso
+        if "progress" in changed:
+            job.progress_percent = progress_percent_from_progress(job.progress, status=job.status)
+        if "status" in changed or "progress" in changed:
+            job.progress_percent = progress_percent_from_progress(job.progress, status=job.status)
+        if job.status in {"completed", "failed"}:
+            if not job.finished_at_utc:
+                job.finished_at_utc = now_iso
+            job.progress_percent = 100
+            job.duration_s = max(0, utc_now_unix() - int(job.created_at))
+
+    async def _persist_job(self, job: Job) -> None:
+        if self.store is None:
+            return
+        await self.store.upsert_job(job)
+
+    async def _publish_global_snapshot(self, job_id: str, *, event_type: str) -> None:
+        async with self._global_sub_lock:
+            sockets = list(self._global_subscribers)
+        if not sockets:
+            return
+        job = await self.get_job(job_id)
+        if job is None:
+            return
+        payload = {
+            "type": "task_updated",
+            "event": event_type,
+            "ts": utc_now_iso(),
+            "job": self.public_job(job),
+        }
+        for ws in sockets:
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                await self.unsubscribe_all(ws)
 
     async def _worker_loop(self, worker_index: int) -> None:
         while True:
@@ -438,3 +559,28 @@ class JobManager:
                 if pid and pid != prompt_id:
                     continue
                 raise ComfyApiError(str(data))
+
+
+def _truncate_text(value: str, *, limit: int = 500) -> str:
+    text = str(value or "")
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "...[truncated]"
+
+
+def progress_percent_from_progress(progress: Dict[str, Any], *, status: str) -> int:
+    if status in {"completed", "failed"}:
+        return 100
+    if status in {"pending", "queued"}:
+        return 0
+    if not isinstance(progress, dict):
+        return 0
+    try:
+        value = float(progress.get("value") or 0)
+        total = float(progress.get("max") or 0)
+    except Exception:
+        return 0
+    if total <= 0:
+        return 0
+    pct = int((value / total) * 100.0)
+    return max(0, min(99, pct))

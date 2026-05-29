@@ -4,6 +4,7 @@ import asyncio
 import base64
 import ipaddress
 import json
+import logging
 import re
 import socket
 from pathlib import Path
@@ -35,7 +36,9 @@ from .comfy_workflow import (
     pick_unique_target,
 )
 from .config import Config, load_config
+from .admin_routes import create_admin_router
 from .job_retention import run_job_retention_forever
+from .job_store import JobStore
 from .jobs import JobManager
 from .signed_urls import create_signed_query, has_valid_signature, signing_secret
 from .util import (
@@ -54,6 +57,9 @@ from .workflow_params import (
     public_parameter_spec,
 )
 from .workflow_registry import WorkflowRegistry
+
+
+logger = logging.getLogger(__name__)
 
 
 def _openai_error(
@@ -299,7 +305,8 @@ def create_app() -> FastAPI:
     cfg = load_config()
     registry = WorkflowRegistry(cfg.workflows_dir)
     comfy = ComfyUIClient(cfg.comfy_base_url, http_timeout_s=cfg.http_timeout_s)
-    jobs = JobManager(cfg=cfg, registry=registry, comfy=comfy)
+    store = JobStore(cfg.database_path)
+    jobs = JobManager(cfg=cfg, registry=registry, comfy=comfy, store=store)
 
     app = FastAPI(title="comfyui2api", version="0.1.0")
     app.add_middleware(MaxBodySizeMiddleware, max_body_bytes=cfg.max_body_bytes)
@@ -307,8 +314,11 @@ def create_app() -> FastAPI:
     app.state.registry = registry
     app.state.comfy = comfy
     app.state.jobs = jobs
+    app.state.job_store = store
+    app.include_router(create_admin_router())
 
     cfg.runs_dir.mkdir(parents=True, exist_ok=True)
+    cfg.data_dir.mkdir(parents=True, exist_ok=True)
 
     @app.exception_handler(HTTPException)
     async def _http_exc_handler(request: Request, exc: HTTPException):  # type: ignore[override]
@@ -318,6 +328,13 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     async def _startup() -> None:
+        await store.init()
+        await store.mark_unfinished_interrupted()
+        if not cfg.admin_token and cfg.api_listen not in {"127.0.0.1", "localhost", "::1"}:
+            logger.warning(
+                "Admin API is not protected by ADMIN_TOKEN or API_TOKEN while API_LISTEN=%s.",
+                cfg.api_listen,
+            )
         if cfg.comfyui_startup_check:
             try:
                 await comfy.system_stats()
@@ -952,6 +969,7 @@ def create_app() -> FastAPI:
         job = await jobs.create_job(
             kind=kind,
             workflow=wf.name,
+            platform="Chat",
             requested_model=requested_model,
             seconds=str(seconds_value or ""),
             size=str(body.get("size") or "").strip(),
@@ -1089,6 +1107,7 @@ def create_app() -> FastAPI:
         job = await jobs.create_job(
             kind=kind,
             workflow=workflow,
+            platform="Native",
             prompt=prompt,
             negative_prompt=negative_prompt,
             image=image_rel,
@@ -1203,6 +1222,7 @@ def create_app() -> FastAPI:
         job = await jobs.create_job(
             kind="txt2img",
             workflow=workflow,
+            platform="OpenAI",
             prompt=prompt,
             negative_prompt=negative_prompt,
             standard_params=standard_params,
@@ -1263,6 +1283,7 @@ def create_app() -> FastAPI:
         job = await jobs.create_job(
             kind="img2img",
             workflow=wf.name,
+            platform="OpenAI",
             prompt=(prompt or "").strip(),
             negative_prompt=(negative_prompt or "").strip(),
             image=image_rel,
@@ -1322,6 +1343,7 @@ def create_app() -> FastAPI:
         job = await jobs.create_job(
             kind="img2img",
             workflow=wf.name,
+            platform="OpenAI",
             prompt="",
             image=image_rel,
             standard_params=standard_params,
@@ -1371,6 +1393,7 @@ def create_app() -> FastAPI:
         job = await jobs.create_job(
             kind="txt2video",
             workflow=workflow,
+            platform="OpenAI",
             prompt=prompt,
             negative_prompt=negative_prompt,
             standard_params=standard_params,
@@ -1429,6 +1452,7 @@ def create_app() -> FastAPI:
         job = await jobs.create_job(
             kind="img2video",
             workflow=wf.name,
+            platform="OpenAI",
             prompt=(prompt or "").strip(),
             negative_prompt=(negative_prompt or "").strip(),
             image=image_rel,
@@ -1605,6 +1629,7 @@ def create_app() -> FastAPI:
         job = await jobs.create_job(
             kind=kind,
             workflow=workflow,
+            platform="OpenAI",
             requested_model=requested_model,
             seconds=str(payload.get("seconds") or "").strip(),
             size=str(payload.get("size") or "").strip(),
@@ -1790,6 +1815,7 @@ def create_app() -> FastAPI:
         job = await jobs.create_job(
             kind=kind,
             workflow=workflow,
+            platform="New-API",
             requested_model=requested_model,
             seconds=seconds,
             size=size,
@@ -1852,6 +1878,11 @@ def create_app() -> FastAPI:
             "metadata": meta_out,
             "error": err,
         }
+
+    if cfg.ui_enabled:
+        from .webui import mount_webui
+
+        mount_webui(app, cfg.ui_dist_dir)
 
     return app
 

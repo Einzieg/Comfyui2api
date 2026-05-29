@@ -23,3 +23,6 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+comfyui2api = ["webui_dist/index.html", "webui_dist/assets/*"]
