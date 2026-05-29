@@ -107,6 +107,7 @@ $env:IMAGE_UPLOAD_MODE = "comfy"
 | `DATABASE_PATH` | `.\data\comfyui2api.db` | SQLite 任务历史数据库路径 |
 | `COMFYUI2API_UI_ENABLED` | `true` | 是否挂载内置 Web UI |
 | `COMFYUI2API_DISABLE_UI` | `false` | 设为 `1` 时禁用 `/ui` |
+| `COMFYUI2API_NO_OPEN` | `false` | UI 模式启动服务但不自动打开浏览器，主要用于 CI/自动化验证 |
 | `ADMIN_TOKEN` | *继承 API_TOKEN* | 管理台 REST/WebSocket 鉴权令牌 |
 | `INPUT_SUBDIR` | `comfyui2api` | 写入 ComfyUI input 时的专属子目录 |
 | `WORKER_CONCURRENCY` | `1` | 同时并发运行的任务数量 |
@@ -202,6 +203,7 @@ dist/comfyui2api/
 触发方式：
 
 - 推送 `v*` tag，例如 `v0.1.0`：自动构建并创建/更新同名 GitHub Release。
+- 推送 `main`：自动构建并上传 Actions artifact，用于验证打包和冒烟测试，不创建 Release。
 - 在 GitHub 页面进入 **Actions -> Build Windows Release -> Run workflow**：手动在线打包。
 - 手动运行时如果只想拿构建产物，保持 `publish_release=false` 即可；如果要发版，填写 `version`（例如 `v0.1.0`）并设置 `publish_release=true`。
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import argparse
+import sys
 import threading
 import webbrowser
 from pathlib import Path
@@ -42,6 +43,30 @@ def _env_file_from_argv(argv: list[str] | None) -> str:
     return ""
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = (os.environ.get(name) or "").strip()
+    if not raw:
+        return default
+    return raw.lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _ensure_standard_streams() -> None:
+    if sys.stdout is not None and sys.stderr is not None:
+        return
+
+    if getattr(sys, "frozen", False):
+        log_dir = Path(sys.executable).resolve().parent / "logs"
+    else:
+        log_dir = Path.cwd() / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    stream = (log_dir / "comfyui2api-desktop.log").open("a", encoding="utf-8", buffering=1)
+
+    if sys.stdout is None:
+        sys.stdout = stream
+    if sys.stderr is None:
+        sys.stderr = stream
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="comfyui2api")
     subparsers = parser.add_subparsers(dest="command")
@@ -74,13 +99,14 @@ def open_browser_later(url: str, *, delay_s: float = 1.0) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
+    _ensure_standard_streams()
     _load_env(_env_file_from_argv(argv))
     args = parse_args(argv)
     command = args.command or "ui"
 
     if command == "ui":
         host = (args.host or "127.0.0.1").strip() or "127.0.0.1"
-        should_open = not args.no_open
+        should_open = not args.no_open and not _env_bool("COMFYUI2API_NO_OPEN", False)
     else:
         host = (args.host or os.environ.get("API_LISTEN", "0.0.0.0")).strip() or "0.0.0.0"
         should_open = False
