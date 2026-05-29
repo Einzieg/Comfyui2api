@@ -4,6 +4,8 @@ import os
 import argparse
 import sys
 import threading
+import time
+import urllib.request
 import webbrowser
 from pathlib import Path
 
@@ -98,6 +100,93 @@ def open_browser_later(url: str, *, delay_s: float = 1.0) -> None:
     timer.start()
 
 
+def _make_server(app, *, host: str, port: int, log_level: str) -> uvicorn.Server:
+    server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level=log_level))
+    app.state.shutdown_callback = lambda: setattr(server, "should_exit", True)
+    return server
+
+
+def _serve_app(app, *, host: str, port: int, log_level: str) -> None:
+    _make_server(app, host=host, port=port, log_level=log_level).run()
+
+
+def _wait_for_health(url: str, *, timeout_s: float = 20.0) -> bool:
+    deadline = time.monotonic() + timeout_s
+    health_url = url.rsplit("/", 1)[0] + "/health"
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(health_url, timeout=1) as response:
+                if response.status == 200:
+                    return True
+        except Exception:
+            time.sleep(0.25)
+    return False
+
+
+def _run_desktop_window(app, *, host: str, port: int, log_level: str, should_open: bool) -> None:
+    url = f"http://{host}:{port}/ui"
+    server = _make_server(app, host=host, port=port, log_level=log_level)
+    server_thread = threading.Thread(target=server.run, name="comfyui2api-server", daemon=True)
+    server_thread.start()
+
+    ready = _wait_for_health(url)
+    if should_open and ready:
+        open_browser_later(url, delay_s=0.1)
+
+    try:
+        import tkinter as tk
+        from tkinter import ttk
+    except Exception:
+        server_thread.join()
+        return
+
+    root = tk.Tk()
+    root.title("comfyui2api")
+    root.geometry("420x220")
+    root.minsize(420, 220)
+
+    frame = ttk.Frame(root, padding=20)
+    frame.pack(fill="both", expand=True)
+
+    ttk.Label(frame, text="comfyui2api", font=("", 16, "bold")).pack(anchor="w")
+    status = ttk.Label(frame, text=("Running" if ready else "Starting"), foreground=("#0b7a45" if ready else "#9a6700"))
+    status.pack(anchor="w", pady=(8, 0))
+    ttk.Label(frame, text=url).pack(anchor="w", pady=(4, 18))
+
+    actions = ttk.Frame(frame)
+    actions.pack(anchor="w")
+
+    open_button = ttk.Button(actions, text="Open Dashboard", command=lambda: webbrowser.open(url))
+    open_button.pack(side="left")
+
+    def request_quit() -> None:
+        status.configure(text="Shutting down", foreground="#9a3412")
+        open_button.configure(state="disabled")
+        quit_button.configure(state="disabled")
+        server.should_exit = True
+        root.after(200, wait_for_exit)
+
+    def wait_for_exit() -> None:
+        if server_thread.is_alive():
+            root.after(200, wait_for_exit)
+            return
+        root.destroy()
+
+    quit_button = ttk.Button(actions, text="Quit", command=request_quit)
+    quit_button.pack(side="left", padx=(10, 0))
+    root.protocol("WM_DELETE_WINDOW", request_quit)
+
+    def watch_server() -> None:
+        if server_thread.is_alive():
+            root.after(500, watch_server)
+            return
+        if root.winfo_exists():
+            root.destroy()
+
+    root.after(500, watch_server)
+    root.mainloop()
+
+
 def main(argv: list[str] | None = None) -> None:
     _ensure_standard_streams()
     _load_env(_env_file_from_argv(argv))
@@ -118,12 +207,16 @@ def main(argv: list[str] | None = None) -> None:
     if args.disable_ui:
         os.environ["COMFYUI2API_DISABLE_UI"] = "1"
 
+    from comfyui2api.app import app
+
+    if command == "ui" and getattr(sys, "frozen", False) and not _env_bool("COMFYUI2API_NO_WINDOW", False):
+        _run_desktop_window(app, host=host, port=port, log_level=args.log_level, should_open=should_open)
+        return
+
     if command == "ui" and should_open:
         open_browser_later(f"http://{host}:{port}/ui")
 
-    from comfyui2api.app import app
-
-    uvicorn.run(app, host=host, port=port, log_level=args.log_level)
+    _serve_app(app, host=host, port=port, log_level=args.log_level)
 
 
 if __name__ == "__main__":

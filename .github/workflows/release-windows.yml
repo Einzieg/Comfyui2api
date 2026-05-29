@@ -138,6 +138,7 @@ jobs:
           $env:COMFYUI_STARTUP_CHECK = "0"
           $env:ENABLE_WORKFLOW_WATCH = "0"
           $env:COMFYUI2API_NO_OPEN = "1"
+          $env:COMFYUI2API_NO_WINDOW = "1"
           $env:API_PORT = [string]$port
 
           $exe = Join-Path $PWD "dist\comfyui2api\comfyui2api.exe"
@@ -166,6 +167,14 @@ jobs:
             $ui = Invoke-WebRequest -Uri "http://127.0.0.1:$port/ui/" -TimeoutSec 5
             if ($ui.StatusCode -ne 200 -or $ui.Content -notmatch '<div id="root"></div>') {
               throw "Packaged desktop app did not serve index.html"
+            }
+
+            $shutdown = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:$port/v1/admin/shutdown" -TimeoutSec 5
+            if ($shutdown.status -ne "shutting_down") {
+              throw "Packaged desktop app did not accept shutdown request"
+            }
+            if (-not $proc.WaitForExit(10000)) {
+              throw "Packaged desktop app did not stop after shutdown request"
             }
           } finally {
             if ($null -ne $proc -and -not $proc.HasExited) {

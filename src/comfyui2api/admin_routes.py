@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import ipaddress
 from pathlib import Path
 from typing import Any, Mapping
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -73,6 +75,46 @@ def create_admin_router() -> APIRouter:
         )
         return base
 
+    @router.get("/workflows")
+    async def workflows(request: Request, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+        cfg = _cfg(request)
+        _require_admin_auth(cfg, authorization)
+        registry = request.app.state.registry
+        items: list[dict[str, Any]] = []
+        for wf in await registry.list():
+            items.append(
+                {
+                    "name": wf.name,
+                    "kind": wf.capabilities.kind,
+                    "available": True,
+                    "load_error": None,
+                    "parameter_error": wf.parameter_error,
+                }
+            )
+        for load_error in await registry.list_load_errors():
+            items.append(
+                {
+                    "name": load_error.name,
+                    "kind": None,
+                    "available": False,
+                    "load_error": load_error.error,
+                    "parameter_error": None,
+                }
+            )
+        items.sort(key=lambda item: str(item.get("name") or "").lower())
+        return {"workflows_dir": str(cfg.workflows_dir), "items": items}
+
+    @router.post("/shutdown")
+    async def shutdown(request: Request, authorization: str | None = Header(default=None)) -> dict[str, str]:
+        cfg = _cfg(request)
+        _require_admin_auth(cfg, authorization)
+        _require_local_request(request)
+        callback = getattr(request.app.state, "shutdown_callback", None)
+        if not callable(callback):
+            raise HTTPException(status_code=409, detail={"error": {"message": "Shutdown is not available for this process"}})
+        asyncio.get_running_loop().call_later(0.2, callback)
+        return {"status": "shutting_down"}
+
     @router.websocket("/tasks/ws")
     async def tasks_ws(ws: WebSocket) -> None:
         cfg = ws.app.state.cfg
@@ -138,6 +180,17 @@ def _require_admin_auth(cfg: Config, authorization: str | None) -> None:
         return
     if not bearer_authorized(authorization or "", cfg.admin_token):
         raise HTTPException(status_code=401, detail={"error": {"message": "Unauthorized"}})
+
+
+def _require_local_request(request: Request) -> None:
+    host = (request.client.host if request.client else "") or ""
+    try:
+        if ipaddress.ip_address(host).is_loopback:
+            return
+    except ValueError:
+        if host.lower() == "localhost":
+            return
+    raise HTTPException(status_code=403, detail={"error": {"message": "Shutdown is only available from localhost"}})
 
 
 def _base_url(request: Request, cfg: Config) -> str:

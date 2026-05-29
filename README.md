@@ -108,6 +108,7 @@ $env:IMAGE_UPLOAD_MODE = "comfy"
 | `COMFYUI2API_UI_ENABLED` | `true` | 是否挂载内置 Web UI |
 | `COMFYUI2API_DISABLE_UI` | `false` | 设为 `1` 时禁用 `/ui` |
 | `COMFYUI2API_NO_OPEN` | `false` | UI 模式启动服务但不自动打开浏览器，主要用于 CI/自动化验证 |
+| `COMFYUI2API_NO_WINDOW` | `false` | 打包版 UI 模式不显示本地控制窗口，主要用于 CI/自动化验证 |
 | `ADMIN_TOKEN` | *继承 API_TOKEN* | 管理台 REST/WebSocket 鉴权令牌 |
 | `INPUT_SUBDIR` | `comfyui2api` | 写入 ComfyUI input 时的专属子目录 |
 | `WORKER_CONCURRENCY` | `1` | 同时并发运行的任务数量 |
@@ -193,6 +194,8 @@ dist/comfyui2api/
 
 - `comfyui2api.exe`：普通用户入口，默认 UI 模式，不显示控制台窗口。
 - `comfyui2api-cli.exe`：命令行入口，保留控制台日志，支持 `serve` / `ui` 参数。
+
+双击 `comfyui2api.exe` 会启动本地控制窗口。窗口可打开 Web 控制台，也可以直接退出服务；关闭窗口会停止当前 comfyui2api 进程。
 
 打包版的 `comfyui-api-workflows/`、`runs/`、`data/`、`logs/` 会位于 EXE 所在目录，不写入 PyInstaller 临时解包目录。
 

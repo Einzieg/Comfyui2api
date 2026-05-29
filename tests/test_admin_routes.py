@@ -5,6 +5,7 @@ import importlib
 import os
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -110,6 +111,27 @@ class AdminRoutesTests(unittest.TestCase):
                 with client.websocket_connect("/v1/admin/tasks/ws?token=admin-token") as ws:
                     payload = ws.receive_json()
                 self.assertEqual(payload["type"], "snapshot")
+
+    def test_admin_shutdown_requires_token_and_local_callback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            app = self._app_with_env(Path(tmp))
+            called = False
+
+            def shutdown_callback() -> None:
+                nonlocal called
+                called = True
+
+            app.state.shutdown_callback = shutdown_callback
+            with TestClient(app, client=("127.0.0.1", 50000)) as client:
+                unauthorized = client.post("/v1/admin/shutdown")
+                self.assertEqual(unauthorized.status_code, 401)
+
+                response = client.post("/v1/admin/shutdown", headers={"Authorization": "Bearer admin-token"})
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json()["status"], "shutting_down")
+                time.sleep(0.4)
+
+            self.assertTrue(called)
 
     def test_ui_mount_built_and_missing_states(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

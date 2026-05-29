@@ -218,6 +218,7 @@ button:disabled,
 
 .primary-button,
 .icon-text-button,
+.danger-button,
 .ghost-button,
 .kbd-pill,
 .sync-pill {
@@ -237,6 +238,17 @@ button:disabled,
   border-color: var(--blue);
   background: var(--blue);
   color: white;
+}
+
+.danger-button {
+  border-color: color-mix(in srgb, var(--red) 45%, var(--border));
+  background: var(--red-soft);
+  color: var(--red);
+  font-weight: 800;
+}
+
+.danger-button.full-width {
+  width: 100%;
 }
 
 .icon-text-button,
@@ -391,6 +403,114 @@ button:disabled,
   border-radius: 8px;
   background: var(--surface);
   box-shadow: var(--shadow);
+}
+
+.view-panel {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.runtime-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 14px;
+  padding: 18px;
+}
+
+.runtime-card {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  padding: 16px;
+}
+
+.runtime-card span,
+.workflow-row span,
+.workflow-row small,
+.output-card span,
+.output-card small {
+  color: var(--muted);
+}
+
+.runtime-card span,
+.runtime-card strong,
+.output-card strong,
+.output-card span,
+.output-card small {
+  display: block;
+}
+
+.runtime-card strong {
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+
+.workflow-list {
+  display: grid;
+  gap: 10px;
+  padding: 0 18px 18px;
+}
+
+.workflow-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  padding: 12px 14px;
+}
+
+.workflow-row strong,
+.workflow-row span {
+  display: block;
+}
+
+.workflow-row small {
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.workflow-row.is-error {
+  border-color: color-mix(in srgb, var(--red) 42%, var(--border));
+}
+
+.workflow-row.is-error small {
+  color: var(--red);
+}
+
+.output-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 14px;
+  padding: 0 18px 18px;
+}
+
+.output-card {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--text);
+  padding: 14px;
+  text-align: left;
+}
+
+.output-card span {
+  margin: 8px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compact {
+  height: auto;
+  padding: 28px;
 }
 
 .panel-header {
@@ -1017,6 +1137,8 @@ tbody tr:hover {
 
   .status-cards,
   .detail-grid,
+  .runtime-grid,
+  .output-grid,
   .token-page {
     grid-template-columns: 1fr;
   }

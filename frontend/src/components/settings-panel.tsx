@@ -1,8 +1,18 @@
 import type React from "react";
-import { CheckCircle2, X } from "lucide-react";
+import { CheckCircle2, Power, X } from "lucide-react";
 import type { AdminStats } from "../lib/api";
 
-export function SettingsPanel({ stats, onClose }: { stats: AdminStats | null; onClose: () => void }): React.ReactElement {
+export function SettingsPanel({
+  stats,
+  shuttingDown,
+  onClose,
+  onShutdown
+}: {
+  stats: AdminStats | null;
+  shuttingDown: boolean;
+  onClose: () => void;
+  onShutdown: () => void;
+}): React.ReactElement {
   return (
     <div className="drawer-layer" role="dialog" aria-modal="true">
       <button className="drawer-scrim" type="button" onClick={onClose} aria-label="关闭" />
@@ -32,6 +42,12 @@ export function SettingsPanel({ stats, onClose }: { stats: AdminStats | null; on
           <span>127.0.0.1 安全默认</span>
           <span>Bearer Auth</span>
           <span>WebSocket token</span>
+        </section>
+        <section className="settings-section">
+          <button className="danger-button full-width" type="button" onClick={onShutdown} disabled={shuttingDown}>
+            <Power size={16} />
+            {shuttingDown ? "正在退出应用" : "退出 comfyui2api"}
+          </button>
         </section>
       </aside>
     </div>

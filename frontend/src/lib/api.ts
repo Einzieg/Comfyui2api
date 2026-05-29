@@ -66,6 +66,19 @@ export interface TaskFilters {
   platform?: string;
 }
 
+export interface WorkflowItem {
+  name: string;
+  kind?: string | null;
+  available: boolean;
+  load_error?: string | null;
+  parameter_error?: string | null;
+}
+
+export interface WorkflowListResponse {
+  workflows_dir: string;
+  items: WorkflowItem[];
+}
+
 export interface SnapshotEvent {
   type: "snapshot";
   data: TaskListResponse;
@@ -108,6 +121,14 @@ export async function getTask(jobId: string): Promise<TaskDetailResponse> {
 
 export async function getStats(): Promise<AdminStats> {
   return requestJson<AdminStats>("/v1/admin/stats");
+}
+
+export async function listWorkflows(): Promise<WorkflowListResponse> {
+  return requestJson<WorkflowListResponse>("/v1/admin/workflows");
+}
+
+export async function shutdownApp(): Promise<{ status: string }> {
+  return requestJson<{ status: string }>("/v1/admin/shutdown", { method: "POST" });
 }
 
 export function adminWsUrl(token: string): string {
