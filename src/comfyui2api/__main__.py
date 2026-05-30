@@ -145,6 +145,15 @@ def _run_desktop_window(app, *, host: str, port: int, log_level: str, should_ope
     root.geometry("420x220")
     root.minsize(420, 220)
 
+    try:
+        from comfyui2api.config import package_resource_dir
+
+        icon_path = package_resource_dir() / "comfyui2api.ico"
+        if icon_path.exists():
+            root.iconbitmap(default=str(icon_path))
+    except Exception:
+        pass
+
     frame = ttk.Frame(root, padding=20)
     frame.pack(fill="both", expand=True)
 

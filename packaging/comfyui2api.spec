@@ -5,6 +5,8 @@ from pathlib import Path
 
 ROOT = Path.cwd().resolve()
 SRC = ROOT / "src"
+ICON = ROOT / "assets" / "comfyui2api.ico"
+ICON_ARG = str(ICON) if ICON.exists() else None
 
 
 def data_files():
@@ -12,6 +14,8 @@ def data_files():
     webui_dist = SRC / "comfyui2api" / "webui_dist"
     if webui_dist.exists():
         items.append((str(webui_dist), "comfyui2api/webui_dist"))
+    if ICON.exists():
+        items.append((str(ICON), "comfyui2api"))
     for name in ("README.md", ".env.example"):
         path = ROOT / name
         if path.exists():
@@ -55,6 +59,7 @@ desktop_exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=ICON_ARG,
 )
 
 cli_exe = EXE(
@@ -73,6 +78,7 @@ cli_exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=ICON_ARG,
 )
 
 coll = COLLECT(

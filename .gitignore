@@ -12,6 +12,7 @@ __pycache__/
 .venv/
 dist/
 build/
+docs/
 *.egg-info/
 *.tsbuildinfo
 frontend/node_modules/
