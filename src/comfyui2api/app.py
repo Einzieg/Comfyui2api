@@ -283,7 +283,10 @@ def _workflow_supports_kind(wf: Any, kind: str) -> bool:
     if kind == "txt2video":
         return bool(getattr(caps, "has_save_video", False))
     if kind == "img2video":
-        return bool(getattr(caps, "has_save_video", False) and getattr(caps, "has_load_image", False))
+        return bool(
+            (getattr(caps, "has_save_video", False) or getattr(caps, "has_save_3d", False))
+            and getattr(caps, "has_load_image", False)
+        )
     if kind == "txt2audio":
         return bool(getattr(caps, "has_save_audio", False))
     return True
@@ -297,7 +300,9 @@ def _workflow_kind_error_message(*, wf: Any, kind: str) -> str:
         missing.append("missing LoadImage")
     if kind in {"txt2img", "img2img"} and not getattr(caps, "has_save_image", False):
         missing.append("missing SaveImage")
-    if kind in {"txt2video", "img2video"} and not getattr(caps, "has_save_video", False):
+    if kind == "txt2video" and not getattr(caps, "has_save_video", False):
+        missing.append("missing SaveVideo")
+    if kind == "img2video" and not (getattr(caps, "has_save_video", False) or getattr(caps, "has_save_3d", False)):
         missing.append("missing SaveVideo")
     if kind == "txt2audio" and not getattr(caps, "has_save_audio", False):
         missing.append("missing SaveAudio")
@@ -1815,7 +1820,7 @@ def create_app() -> FastAPI:
                 pick = o
                 break
             fn = (o.filename or "").lower()
-            if fn.endswith((".mp4", ".webm", ".mov", ".gif")):
+            if fn.endswith((".mp4", ".webm", ".mov", ".gif", ".glb", ".gltf")):
                 pick = o
                 break
         if pick is None and job.outputs:

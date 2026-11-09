@@ -456,6 +456,14 @@ def prepare_prompt(
         pos_candidates, neg_candidates = find_text_prompt_targets(prompt)
         img_candidates = find_load_image_targets(prompt)
 
+    # Image-to-3D workflows have no text prompt; OpenAI-style clients still send one, so ignore it there.
+    if positive_prompt and not (positive_prompt_node or "").strip() and not pos_candidates:
+        if detect_capabilities(prompt).has_save_3d:
+            positive_prompt = None
+    if negative_prompt and not (negative_prompt_node or "").strip() and not neg_candidates:
+        if detect_capabilities(prompt).has_save_3d:
+            negative_prompt = None
+
     if positive_prompt:
         node_ref = (positive_prompt_node or "").strip()
         if node_ref:
@@ -536,6 +544,7 @@ class WorkflowCapabilities:
     has_save_image: bool
     has_save_video: bool
     has_save_audio: bool = False
+    has_save_3d: bool = False
 
 
 def detect_capabilities(prompt: Dict[str, Any]) -> WorkflowCapabilities:
@@ -543,6 +552,7 @@ def detect_capabilities(prompt: Dict[str, Any]) -> WorkflowCapabilities:
     has_save_image = False
     has_save_video = False
     has_save_audio = False
+    has_save_3d = False
     for node in prompt.values():
         if not isinstance(node, dict):
             continue
@@ -555,6 +565,8 @@ def detect_capabilities(prompt: Dict[str, Any]) -> WorkflowCapabilities:
             has_save_video = True
         if "saveaudio" in cls:
             has_save_audio = True
+        if "save3d" in cls or "saveglb" in cls:
+            has_save_3d = True
 
     kind = "unknown"
     if has_save_video and has_load_image:
@@ -567,6 +579,8 @@ def detect_capabilities(prompt: Dict[str, Any]) -> WorkflowCapabilities:
         kind = "txt2img"
     elif has_save_audio and not has_load_image:
         kind = "txt2audio"
+    elif has_save_3d and has_load_image:
+        kind = "img23d"
 
     return WorkflowCapabilities(
         kind=kind,
@@ -574,4 +588,5 @@ def detect_capabilities(prompt: Dict[str, Any]) -> WorkflowCapabilities:
         has_save_image=has_save_image,
         has_save_video=has_save_video,
         has_save_audio=has_save_audio,
+        has_save_3d=has_save_3d,
     )

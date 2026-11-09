@@ -154,6 +154,8 @@ _EXTRA_MEDIA_TYPES = {
     ".wav": "audio/wav",
     ".mp3": "audio/mpeg",
     ".opus": "audio/ogg",
+    ".glb": "model/gltf-binary",
+    ".gltf": "model/gltf+json",
 }
 
 
