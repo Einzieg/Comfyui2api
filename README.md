@@ -241,7 +241,7 @@ comfyui2api/
 
 - `GET /v1/models`：将工作流列表伪装为 models 返回。
 - `POST /v1/images/generations`：文生图，支持 `response_format=url`、`b64_json`、`base64`。
-- `POST /v1/images/edits`：图生图（需提交 multipart，字段为 `image`）。
+- `POST /v1/images/edits`：图生图（需提交 multipart，字段为 `image`）。可选字段 `mask`（蒙版图，仅当工作流的 `.params.json` 声明了 `mask` 图片参数时可用；声明为 `required` 则必填）和 `denoise`（0～1，需在 `.params.json` 里映射）。
 - `POST /v1/images/variations`：图生图变体（需提交 multipart，字段为 `image`）。
 - `POST /v1/videos`：视频任务创建（支持 JSON 或 multipart；可选 `input_reference` 作为图生视频输入）。
 - `GET /v1/videos/{video_id}`：查询视频状态（返回进度及短期签名 `url`）。

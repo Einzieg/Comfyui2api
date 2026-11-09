@@ -1251,6 +1251,7 @@ def create_app() -> FastAPI:
     async def openai_images_edits(
         request: Request,
         image: UploadFile = File(...),
+        mask: Optional[UploadFile] = File(None),
         prompt: str = Form(""),
         model: str = Form(""),
         workflow: str = Form(""),
@@ -1262,11 +1263,17 @@ def create_app() -> FastAPI:
         steps: str = Form(""),
         cfg_scale: str = Form("", alias="cfg"),
         seed: str = Form(""),
+        denoise: Optional[float] = Form(None, ge=0.0, le=1.0),
         authorization: Optional[str] = Header(default=None),
         x_comfyui_async: Optional[str] = Header(default=None),
     ) -> Any:
         _require_auth(cfg, authorization)
         wf = await _resolve_workflow_for_kind(kind="img2img", requested_name=(workflow or model or "").strip())
+        mask_spec = wf.parameter_spec.parameters.get("mask") if wf.parameter_spec else None
+        if mask is not None and (mask_spec is None or mask_spec.type != "image"):
+            raise _openai_error("This workflow does not support a separate mask")
+        if mask is None and mask_spec is not None and mask_spec.required:
+            raise _openai_error("This workflow requires a mask")
         raw = await image.read()
         image_rel = await _store_input_image_bytes(data=raw, filename_hint=image.filename)
 
@@ -1280,6 +1287,13 @@ def create_app() -> FastAPI:
                 "seed": seed,
             }
         )
+        if denoise is not None:
+            standard_params["denoise"] = denoise
+        if mask is not None:
+            mask_data = await mask.read()
+            if not mask_data:
+                raise _openai_error("Mask file is empty")
+            standard_params["mask"] = await _store_input_image_bytes(data=mask_data, filename_hint=mask.filename or "mask.png")
         job = await jobs.create_job(
             kind="img2img",
             workflow=wf.name,
