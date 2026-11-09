@@ -87,11 +87,25 @@ def build_parser() -> argparse.ArgumentParser:
     serve = subparsers.add_parser("serve", help="start API service without opening the Web UI")
     add_common_options(serve)
 
+    sync = subparsers.add_parser(
+        "sync-from-history", help="save the API graph of a finished ComfyUI run as a workflow file"
+    )
+    sync.add_argument("workflow", nargs="?", default="", help="saved ComfyUI workflow name (default: the latest run)")
+    sync.add_argument("--env-file", default="")
+    sync.add_argument("--prompt-id", default="")
+    sync.add_argument("--as", dest="target", default="", help="file name in the workflows directory")
+    sync.add_argument("--list", dest="list_only", action="store_true", help="list recent successful runs")
+    sync.add_argument("--all", dest="all_mapped", action="store_true", help="update every saved mapping")
+    sync.add_argument("--dry-run", action="store_true")
+
     return parser
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    return build_parser().parse_args(argv)
+    args_list = list(sys.argv[1:] if argv is None else argv)
+    if not args_list or args_list[0] not in {"ui", "serve", "sync-from-history", "-h", "--help"}:
+        args_list.insert(0, "ui")
+    return build_parser().parse_args(args_list)
 
 
 def open_browser_later(url: str, *, delay_s: float = 1.0) -> None:
@@ -201,6 +215,23 @@ def main(argv: list[str] | None = None) -> None:
     _load_env(_env_file_from_argv(argv))
     args = parse_args(argv)
     command = args.command or "ui"
+
+    if command == "sync-from-history":
+        from comfyui2api.workflow_sync import SyncError, run_cli
+
+        try:
+            raise SystemExit(
+                run_cli(
+                    workflow=args.workflow or None,
+                    prompt_id=args.prompt_id or None,
+                    target=args.target or None,
+                    list_only=args.list_only,
+                    dry_run=args.dry_run,
+                    all_mapped=args.all_mapped,
+                )
+            )
+        except SyncError as exc:
+            raise SystemExit(f"error: {exc}")
 
     if command == "ui":
         host = (args.host or "127.0.0.1").strip() or "127.0.0.1"

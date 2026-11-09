@@ -78,6 +78,40 @@ $env:IMAGE_UPLOAD_MODE = "comfy"
 
 ---
 
+## 🔁 从 ComfyUI 同步工作流
+
+ComfyUI 保存的是画布格式，本服务只认 API 格式。在 ComfyUI 里改完工作流、**跑通一次**之后，执行：
+
+```powershell
+uv run -m comfyui2api sync-from-history qwen-image   # ComfyUI 里保存的工作流名；省略则取最近一次成功运行
+uv run -m comfyui2api sync-from-history qwen-image --as qwen-image-2.1.json   # 保存到不同的文件名
+uv run -m comfyui2api sync-from-history --list       # 查看最近的成功运行
+uv run -m comfyui2api sync-from-history qwen-image --dry-run
+uv run -m comfyui2api sync-from-history --all             # 更新所有已保存映射的工作流
+```
+
+用了 `--as` 之后，“ComfyUI 里的名字 → 文件名”会记在 `data/workflow_sync.json`，下次不用再写 `--as`，`--all` 一次更新全部映射过的工作流（最近没跑过的会跳过）。
+
+它读取 ComfyUI `/history` 里该次运行的 API 图，写入 `comfyui-api-workflows/`，热加载自动生效。已有文件被覆盖时，旧版本留在 `<name>.json.bak`；节点 ID 有增减时会提示检查 `.params.json`。
+
+### 自动同步（ComfyUI 扩展，可选）
+
+`comfyui_extension/comfyui2api_sync/` 是一个不带节点、不带界面的 ComfyUI 自定义节点：它每隔几秒看一眼 ComfyUI 自己的运行历史，把每个已保存工作流**最近一次成功运行**的 API 图写进 `comfyui-api-workflows/`（规则和 `sync-from-history` 一样，只改了随机种子不算更新）。
+
+1. 把文件夹链接或复制到 `ComfyUI/custom_nodes/comfyui2api_sync`（Windows：`New-Item -ItemType Junction`）。
+2. 新建 `ComfyUI/user/comfyui2api_sync.json`：
+
+   ```json
+   { "project": "D:/path/to/Comfyui2api", "auto_add": true }
+   ```
+
+   可选 `workflows_dir`、`map_file`（默认 `data/workflow_sync.json`）、`interval_s`（默认 3）。没有这个文件，扩展什么都不做。
+3. 重启 ComfyUI。
+
+之后在 ComfyUI 里改完、跑通，API 里就是新版。`map_file` 里有对应文件名的按映射写；没有的，`auto_add` 为 `true` 时用保存时的名字新建（只写本服务认得的类型，例如没有保存节点的图会跳过）；不想自动新增就设成 `false`，新工作流再用 `sync-from-history <名字> --as <文件名>` 登记一次。
+
+---
+
 ## ⚙️ 环境变量
 
 你可以通过系统环境变量或 `.env` 文件进行配置：

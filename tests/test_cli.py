@@ -16,9 +16,10 @@ from comfyui2api.__main__ import main, parse_args
 
 
 class CliTests(unittest.TestCase):
-    def test_parse_args_defaults_to_ui_command_later(self) -> None:
+    def test_parse_args_defaults_to_ui_command(self) -> None:
         args = parse_args([])
-        self.assertIsNone(args.command)
+        self.assertEqual(args.command, "ui")
+        self.assertEqual(parse_args(["--port", "9010"]).command, "ui")
 
     def test_ui_mode_sets_localhost_and_opens_browser(self) -> None:
         with patch.dict(os.environ, {}, clear=True), patch("comfyui2api.__main__.open_browser_later") as mock_open, patch(

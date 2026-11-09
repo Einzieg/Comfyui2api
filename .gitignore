@@ -22,3 +22,4 @@ frontend/dist/
 
 comfyui-api-workflows/*.json
 comfyui-api-workflows/.comfyui2api
+comfyui-api-workflows/*.bak
