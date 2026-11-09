@@ -124,6 +124,7 @@ $env:IMAGE_UPLOAD_MODE = "comfy"
 | `DEFAULT_IMG2IMG_WORKFLOW` | `图生图_flux2.json` | 默认图生图工作流 |
 | `DEFAULT_TXT2VIDEO_WORKFLOW`| *空* | 默认文生视频工作流（需自行提供） |
 | `DEFAULT_IMG2VIDEO_WORKFLOW`| `img2video.json` | 默认图生视频工作流 |
+| `DEFAULT_TXT2AUDIO_WORKFLOW`| `anomalous-tts.json` | 默认语音合成（TTS）工作流 |
 | `SIGNED_URL_SECRET` | 继承 `API_TOKEN` | 媒体下载短期签名的加密密钥 |
 | `SIGNED_URL_TTL_SECONDS` | `3600` | 生成的媒体访问链接有效期（秒） |
 
@@ -246,6 +247,12 @@ comfyui2api/
 - `POST /v1/videos`：视频任务创建（支持 JSON 或 multipart；可选 `input_reference` 作为图生视频输入）。
 - `GET /v1/videos/{video_id}`：查询视频状态（返回进度及短期签名 `url`）。
 - `GET /v1/videos/{video_id}/content`：直接下载视频流。
+- `POST /v1/audio/speech`：语音合成（TTS），请求体 JSON，**直接返回音频字节**（与 OpenAI 一致，不走签名链接，也不支持 `x-comfyui-async`）。字段：
+  - `input`：要朗读的台词（必填；可使用节点自带语法，如 `{情绪}`、`[pause:0.8]`，见 Anomalous TTS 文档）。
+  - `voice`：角色名，写入 TTS 节点的 `character`（可选，缺省用工作流里保存的角色）。
+  - `model`（或 `workflow`）：工作流文件名，缺省用 `DEFAULT_TXT2AUDIO_WORKFLOW`。工作流需含 `SaveAudio` 系节点，类型显示为 `txt2audio`。
+  - `language`：可选，写入节点的 `language`（如 `ja`、`zh`）。
+  - `response_format`：`flac`（默认，ComfyUI 原生输出）、`wav`、`mp3`、`opus`。后三种由本机 **ffmpeg**（需在 PATH 中）转码，服务本身不增加 Python 依赖；没有 ffmpeg 时返回 400。
 
 #### 兼容其他协议的扩展接口
 - `POST /v1/video/generations`：New-API 标准的视频生成任务创建。
@@ -266,6 +273,15 @@ curl -s -X POST http://127.0.0.1:8000/v1/images/generations \
   -H "Content-Type: application/json" \
   -H "x-comfyui-async: 1" \
   -d '{"prompt":"a cute cat, pixel art"}'
+```
+
+**调用示例（语音合成，保存为 wav）：**
+```bash
+curl -s -X POST http://127.0.0.1:8000/v1/audio/speech \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"anomalous-tts.json","voice":"伊莉雅","language":"ja","input":"先生、おはようございます！","response_format":"wav"}' \
+  --output speech.wav
 ```
 
 **调用示例（文生图 Base64 返回）：**

@@ -98,6 +98,7 @@ class Config:
     default_img2img_workflow: str
     default_txt2video_workflow: str
     default_img2video_workflow: str
+    default_txt2audio_workflow: str
 
 
 def load_config() -> Config:
@@ -152,4 +153,5 @@ def load_config() -> Config:
         default_img2img_workflow=_env_str("DEFAULT_IMG2IMG_WORKFLOW", "图生图_flux2.json"),
         default_txt2video_workflow=_env_str("DEFAULT_TXT2VIDEO_WORKFLOW", ""),
         default_img2video_workflow=_env_str("DEFAULT_IMG2VIDEO_WORKFLOW", "img2video.json"),
+        default_txt2audio_workflow=_env_str("DEFAULT_TXT2AUDIO_WORKFLOW", "anomalous-tts.json"),
     )
