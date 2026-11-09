@@ -217,7 +217,39 @@ def find_text_prompt_targets(
     if not neg:
         neg.extend(generic)
 
+    # Speech workflows have no CLIPTextEncode; the line to speak is the text input of the node feeding SaveAudio.
+    if not pos:
+        speech = find_speech_target(prompt)
+        if speech:
+            node_id, text_key, _voice_key = speech
+            node = prompt.get(node_id) or {}
+            pos.append((node_id, text_key, as_str(node.get("class_type")), get_node_title(node)))
+
     return pos, neg
+
+
+_SPEECH_VOICE_KEYS = ("character", "voice", "speaker")
+
+
+def find_speech_target(prompt: Dict[str, Any]) -> Optional[Tuple[str, str, Optional[str]]]:
+    """Locate the TTS node feeding an audio save node: (node_id, text_key, voice_key or None)."""
+    sources: List[str] = []
+    for node in prompt.values():
+        if not isinstance(node, dict) or "saveaudio" not in as_str(node.get("class_type")).lower():
+            continue
+        inputs = node.get("inputs")
+        link = inputs.get("audio") if isinstance(inputs, dict) else None
+        if isinstance(link, list) and link and isinstance(link[0], str) and link[0] not in sources:
+            sources.append(link[0])
+
+    for node_id in sources:
+        node = prompt.get(node_id)
+        inputs = node.get("inputs") if isinstance(node, dict) else None
+        if not isinstance(inputs, dict) or not isinstance(inputs.get("text"), str):
+            continue
+        voice_key = next((k for k in _SPEECH_VOICE_KEYS if isinstance(inputs.get(k), str)), None)
+        return node_id, "text", voice_key
+    return None
 
 
 def find_load_image_targets(prompt: Dict[str, Any]) -> List[Tuple[str, str, str, str]]:
@@ -503,12 +535,14 @@ class WorkflowCapabilities:
     has_load_image: bool
     has_save_image: bool
     has_save_video: bool
+    has_save_audio: bool = False
 
 
 def detect_capabilities(prompt: Dict[str, Any]) -> WorkflowCapabilities:
     has_load_image = False
     has_save_image = False
     has_save_video = False
+    has_save_audio = False
     for node in prompt.values():
         if not isinstance(node, dict):
             continue
@@ -519,6 +553,8 @@ def detect_capabilities(prompt: Dict[str, Any]) -> WorkflowCapabilities:
             has_save_image = True
         if "savevideo" in cls or "createvideo" in cls or "videocombine" in cls:
             has_save_video = True
+        if "saveaudio" in cls:
+            has_save_audio = True
 
     kind = "unknown"
     if has_save_video and has_load_image:
@@ -529,10 +565,13 @@ def detect_capabilities(prompt: Dict[str, Any]) -> WorkflowCapabilities:
         kind = "img2img"
     elif has_save_image and not has_load_image:
         kind = "txt2img"
+    elif has_save_audio and not has_load_image:
+        kind = "txt2audio"
 
     return WorkflowCapabilities(
         kind=kind,
         has_load_image=has_load_image,
         has_save_image=has_save_image,
         has_save_video=has_save_video,
+        has_save_audio=has_save_audio,
     )

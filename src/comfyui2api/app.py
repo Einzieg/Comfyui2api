@@ -6,7 +6,9 @@ import ipaddress
 import json
 import logging
 import re
+import shutil
 import socket
+import subprocess
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -24,13 +26,14 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.exception_handlers import http_exception_handler
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from .comfy_client import ComfyUIClient
 from .comfy_workflow import (
     extract_prompt_and_extra,
     find_load_image_targets,
+    find_speech_target,
     find_text_prompt_targets,
     pick_unique_load_image_target,
     pick_unique_target,
@@ -281,6 +284,8 @@ def _workflow_supports_kind(wf: Any, kind: str) -> bool:
         return bool(getattr(caps, "has_save_video", False))
     if kind == "img2video":
         return bool(getattr(caps, "has_save_video", False) and getattr(caps, "has_load_image", False))
+    if kind == "txt2audio":
+        return bool(getattr(caps, "has_save_audio", False))
     return True
 
 
@@ -294,11 +299,36 @@ def _workflow_kind_error_message(*, wf: Any, kind: str) -> str:
         missing.append("missing SaveImage")
     if kind in {"txt2video", "img2video"} and not getattr(caps, "has_save_video", False):
         missing.append("missing SaveVideo")
+    if kind == "txt2audio" and not getattr(caps, "has_save_audio", False):
+        missing.append("missing SaveAudio")
 
     detail = f"detected kind={detected_kind}"
     if missing:
         detail += f"; {', '.join(missing)}"
     return f"Workflow '{wf.name}' does not support {kind} ({detail})."
+
+
+_SPEECH_AUDIO_EXTS = (".flac", ".wav", ".mp3", ".opus", ".ogg")
+# response_format -> (media type, ffmpeg output args). flac is what ComfyUI's SaveAudio writes natively.
+_SPEECH_FORMATS: dict[str, tuple[str, list[str]]] = {
+    "flac": ("audio/flac", ["-f", "flac"]),
+    "wav": ("audio/wav", ["-f", "wav"]),
+    "mp3": ("audio/mpeg", ["-f", "mp3", "-q:a", "2"]),
+    "opus": ("audio/ogg", ["-f", "ogg", "-c:a", "libopus"]),
+}
+
+
+def _convert_audio_bytes(data: bytes, *, fmt: str) -> bytes:
+    """Transcode with a locally installed ffmpeg (no Python audio dependency)."""
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        raise RuntimeError(f"response_format '{fmt}' needs ffmpeg on PATH; use 'flac' or install ffmpeg")
+    cmd = [ffmpeg, "-hide_banner", "-loglevel", "error", "-i", "pipe:0", *_SPEECH_FORMATS[fmt][1], "pipe:1"]
+    proc = subprocess.run(cmd, input=data, capture_output=True, timeout=120)
+    if proc.returncode != 0 or not proc.stdout:
+        detail = proc.stderr.decode("utf-8", "replace").strip()[:300]
+        raise RuntimeError(f"ffmpeg failed converting to {fmt}: {detail}")
+    return proc.stdout
 
 
 def create_app() -> FastAPI:
@@ -1034,6 +1064,8 @@ def create_app() -> FastAPI:
             return cfg.default_txt2video_workflow
         if kind == "img2video":
             return cfg.default_img2video_workflow
+        if kind == "txt2audio":
+            return cfg.default_txt2audio_workflow
         raise _openai_error(f"Unsupported kind: {kind}", http_status=400)
 
     @app.post("/v1/jobs")
@@ -1470,6 +1502,65 @@ def create_app() -> FastAPI:
             authorization=authorization,
         )
         return {"created": utc_now_unix(), "data": [{"url": u} for u in urls]}
+
+    @app.post("/v1/audio/speech")
+    async def openai_audio_speech(
+        body: Dict[str, Any],
+        authorization: Optional[str] = Header(default=None),
+    ) -> Response:
+        _require_auth(cfg, authorization)
+        text = str(body.get("input") or "").strip()
+        if not text:
+            raise _openai_error("Missing 'input'")
+        fmt = str(body.get("response_format") or "flac").strip().lower() or "flac"
+        if fmt not in _SPEECH_FORMATS:
+            raise _openai_error(
+                f"Unsupported response_format '{fmt}'. Supported: {', '.join(_SPEECH_FORMATS)}"
+            )
+        if fmt != "flac" and not shutil.which("ffmpeg"):
+            raise _openai_error(f"response_format '{fmt}' needs ffmpeg on PATH; use 'flac' or install ffmpeg")
+
+        wf = await _resolve_workflow_for_kind(
+            kind="txt2audio",
+            requested_name=str(body.get("workflow") or body.get("model") or "").strip(),
+        )
+
+        overrides: list[tuple[str, str, Any]] = []
+        prompt, _extra = extract_prompt_and_extra(wf.workflow_obj)
+        speech = find_speech_target(prompt)
+        voice = str(body.get("voice") or "").strip()
+        language = str(body.get("language") or "").strip()
+        if speech:
+            node_id, _text_key, voice_key = speech
+            node_inputs = (prompt.get(node_id) or {}).get("inputs") or {}
+            if voice and voice_key:
+                overrides.append((node_id, voice_key, voice))
+            if language and isinstance(node_inputs.get("language"), str):
+                overrides.append((node_id, "language", language))
+
+        job = await jobs.create_job(
+            kind="txt2audio",
+            workflow=wf.name,
+            platform="OpenAI",
+            prompt=text,
+            overrides=overrides,
+        )
+        done = await _openai_wait(job.job_id)
+        outputs = [o for o in (done.get("outputs") or []) if isinstance(o, dict)]
+        filename = next(
+            (str(o.get("filename") or "") for o in outputs if str(o.get("filename") or "").lower().endswith(_SPEECH_AUDIO_EXTS)),
+            "",
+        ) or _first_output_filename(outputs)
+        if not filename:
+            raise _openai_error("No outputs produced", http_status=500)
+        data = (Path(cfg.runs_dir) / job.job_id / Path(filename).name).read_bytes()
+
+        if not filename.lower().endswith(f".{fmt}"):
+            try:
+                data = await asyncio.to_thread(_convert_audio_bytes, data, fmt=fmt)
+            except RuntimeError as e:
+                raise _openai_error(str(e), code="server_error", http_status=500) from e
+        return Response(content=data, media_type=_SPEECH_FORMATS[fmt][0])
 
     def _as_job_id_from_video_id(video_id: str) -> str:
         raw = (video_id or "").strip()

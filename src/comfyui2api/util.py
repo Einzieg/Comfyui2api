@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import mimetypes
+import os
 import secrets
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -148,7 +149,18 @@ def pick_primary_url(outputs: list[dict[str, Any]]) -> Optional[str]:
     return None
 
 
+_EXTRA_MEDIA_TYPES = {
+    ".flac": "audio/flac",
+    ".wav": "audio/wav",
+    ".mp3": "audio/mpeg",
+    ".opus": "audio/ogg",
+}
+
+
 def guess_media_type(filename: str) -> str:
+    extra = _EXTRA_MEDIA_TYPES.get(os.path.splitext(filename)[1].lower())
+    if extra:
+        return extra
     mt, _ = mimetypes.guess_type(filename)
     return mt or "application/octet-stream"
 
